@@ -1,16 +1,11 @@
-# syntax=docker/dockerfile:1
 FROM node:24-bookworm-slim
 
-# The optional CA mount is used only when validating in a proxied workspace.
-RUN --mount=type=secret,id=proxy_ca \
-    apt-get -o Acquire::https::CaInfo=/run/secrets/proxy_ca update \
-    && apt-get -o Acquire::https::CaInfo=/run/secrets/proxy_ca install -y --no-install-recommends \
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
        ca-certificates curl git libatomic1 openssh-client python3 tini \
     && rm -rf /var/lib/apt/lists/*
 
-RUN --mount=type=secret,id=proxy_ca \
-    if [ -f /run/secrets/proxy_ca ]; then export NODE_EXTRA_CA_CERTS=/run/secrets/proxy_ca; fi; \
-    npm install --prefix /opt/t3 --no-audit --no-fund t3@0.0.45 opencode-ai@1.19.1 \
+RUN npm install --prefix /opt/t3 --no-audit --no-fund t3@0.0.45 opencode-ai@1.19.1 \
     && npm cache clean --force
 
 ENV PATH="/opt/t3/node_modules/.bin:${PATH}" \
