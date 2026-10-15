@@ -36,5 +36,7 @@ the owner's explicit authorization before upgrading. This is not an unlimited
 free server. A volume's data is also subject to Railway's retention policy after
 credits expire.
 
-The actual Railway deployment and phone connection are not yet verified. The
-account connection must be confirmed before using Railway tools.
+The actual Railway deployment was verified through public HTTPS authentication,
+public WSS, and a completed free DeepSeek conversation. Data was verified to
+survive a container restart. The owner's Android pairing is the final client
+step; do not put the phone's pairing code in this repository.
