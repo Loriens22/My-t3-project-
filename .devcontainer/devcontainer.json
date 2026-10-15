@@ -1,11 +1,14 @@
 {
-  "name": "T3 Code + OpenCode (Ubuntu 24.04)",
-  "image": "mcr.microsoft.com/devcontainers/base:ubuntu24.04",
-  "features": {
-    "ghcr.io/devcontainers/features/node:1": {
-      "version": "24"
-    }
+  "name": "T3 Code + free DeepSeek for Android",
+  "image": "mcr.microsoft.com/devcontainers/universal:2",
+  "hostRequirements": { "cpus": 2 },
+  "forwardPorts": [3773],
+  "portsAttributes": {
+    "3773": { "label": "T3 Code", "onAutoForward": "silent", "protocol": "http" }
   },
   "postCreateCommand": "bash .devcontainer/setup.sh",
-  "postStartCommand": "bash .devcontainer/start-t3.sh"
+  "postStartCommand": "bash .devcontainer/start-t3.sh",
+  "customizations": {
+    "vscode": { "settings": { "terminal.integrated.defaultProfile.linux": "bash" } }
+  }
 }

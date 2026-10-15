@@ -1,0 +1,9 @@
+# Runtime state normally lives outside this repository.
+.t3-phone/
+.t3-data/
+.t3/
+node_modules/
+.env
+.env.*
+!.env.example
+*.log
