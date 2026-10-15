@@ -1,6 +1,11 @@
 {
-  "name": "T3 Code and OpenCode",
-  "image": "mcr.microsoft.com/devcontainers/javascript-node:1-24-bookworm",
+  "name": "T3 Code + OpenCode (Ubuntu 24.04)",
+  "image": "mcr.microsoft.com/devcontainers/base:ubuntu24.04",
+  "features": {
+    "ghcr.io/devcontainers/features/node:2": {
+      "version": "24"
+    }
+  },
   "postCreateCommand": "bash .devcontainer/setup.sh",
   "postStartCommand": "bash .devcontainer/start-t3.sh"
 }
