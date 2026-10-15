@@ -17,9 +17,11 @@ Deployment requirements:
   only the HTTPS domain and the newly generated pairing code to the owner.
   Do not commit pairing codes or store them in public deployment logs.
 - If shell access is unavailable, first confirm that deployment logs are private
-  to the owner, set `T3_PRIVATE_ONBOARDING=1`, and read the standard startup grant
-  from those private logs. It expires after five minutes. Clear this variable
-  after the phone has paired. Restarting can create a fresh startup grant.
+  to the owner, set `T3_PRIVATE_ONBOARDING=1`, and read `PHONE_PAIRING_CODE` from
+  those private logs. This standard phone grant works once and expires after
+  one hour. The broad administrative startup grant stays in the private data
+  directory. Clear the variable after the phone has paired. A redeployment can
+  generate another phone grant.
 
 The Docker image was tested with one CPU and 1 GiB RAM, including a completed
 T3 -> OpenCode -> free DeepSeek conversation and preservation of that reply after

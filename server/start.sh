@@ -33,8 +33,9 @@ echo "Create a private phone pairing code with: bash /app/server/pair.sh"
 t3_native="/opt/t3/node_modules/@t3code/t3-linux-$(node -p process.arch)/t3"
 if [[ "${T3_PRIVATE_ONBOARDING:-0}" == "1" ]]; then
   # Enable only after confirming the provider's deployment logs are owner-private.
-  # The headless server prints its standard one-time, five-minute startup grant.
-  exec "$t3_native" serve --host 0.0.0.0 --port "$PORT" --base-dir "$T3CODE_HOME"
+  # Issue the phone grant offline, before provider discovery consumes memory.
+  t3 auth pairing create --base-dir "$T3CODE_HOME" --ttl 1h --label Android --json \
+    | node -e 'let s=""; process.stdin.on("data",c=>s+=c); process.stdin.on("end",()=>{ const p=JSON.parse(s); console.log("PHONE_PAIRING_CODE: "+p.credential); console.log("PHONE_PAIRING_EXPIRES_AT: "+p.expiresAt); });'
 fi
 # Keep startup grants and diagnostics off public HTTP endpoints and normal logs.
 exec "$t3_native" serve --host 0.0.0.0 --port "$PORT" --base-dir "$T3CODE_HOME" \
