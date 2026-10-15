@@ -1,0 +1,6 @@
+{
+  "name": "T3 Code and OpenCode",
+  "image": "mcr.microsoft.com/devcontainers/javascript-node:1-24-bookworm",
+  "postCreateCommand": "bash .devcontainer/setup.sh",
+  "postStartCommand": "bash .devcontainer/start-t3.sh"
+}
