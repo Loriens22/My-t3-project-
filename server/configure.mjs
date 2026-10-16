@@ -60,7 +60,7 @@ if (JSON.stringify(previous) !== JSON.stringify(freeModels)) {
 console.log(`OpenCode catalog: ${freeModels.length} models with zero input/output/cache prices.`);
 writeNew("t3/userdata/settings.json", {
   defaultModelSelection: selection,
-  textGenerationModelSelection: selection,
+  textGenerationModelSelection: { ...selection, options: [{ id: "agent", value: "title" }] },
   defaultRuntimeMode: "approval-required",
   addProjectBaseDirectory: path.join(root, "projects"),
   providerInstances: {
@@ -75,6 +75,14 @@ const passwordFile = path.join(root, "opencode-server-password");
 if (!fs.existsSync(passwordFile)) fs.writeFileSync(passwordFile, randomBytes(32).toString("hex"), { mode: 0o600, flag: "wx" });
 const settingsFile = path.join(root, "t3/userdata/settings.json");
 const settings = JSON.parse(fs.readFileSync(settingsFile, "utf8"));
+// OpenCode's own title agent supports tool-free metadata requests on the free
+// endpoint; a build agent with every tool denied is rejected by that endpoint.
+if (settings.textGenerationModelSelection?.instanceId === "opencode" &&
+    !settings.textGenerationModelSelection.options?.some((option) => option.id === "agent")) {
+  settings.textGenerationModelSelection.options = [
+    ...(settings.textGenerationModelSelection.options || []), { id: "agent", value: "title" },
+  ];
+}
 settings.providerInstances ??= {};
 settings.providerInstances.opencode ??= { driver: "opencode", enabled: true, config: {} };
 settings.providerInstances.opencode.config ??= {};

@@ -18,6 +18,10 @@ fields. On 2026-10-16 this returned 10 models, including Big Pickle and DeepSeek
 V4.1 Flash Free. If discovery fails, a verified bundled catalog is used. Model
 availability and provider rate limits can change.
 
+Metadata generation uses OpenCode's built-in `title` agent. Its free endpoint
+accepts native title requests; it rejected the previous build-agent requests
+with every tool denied. The normal coding model keeps the `build` agent.
+
 Deployment requirements:
 
 - Connect the owner's Railway account before creating any hosted resources.
