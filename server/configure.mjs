@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { execFileSync } from "node:child_process";
+import { randomBytes } from "node:crypto";
 
 const root = process.env.T3_PHONE_ROOT || "/data";
 const selection = { instanceId: "opencode", model: "opencode/deepseek-v4.1-flash-free" };
@@ -68,3 +69,17 @@ writeNew("t3/userdata/settings.json", {
     claudeAgent: { driver: "claudeAgent", enabled: false, config: {} },
   },
 });
+// All T3 activities share one private OpenCode server. Starting an independent
+// helper and one process per thread exceeds the 1 GB trial limit.
+const passwordFile = path.join(root, "opencode-server-password");
+if (!fs.existsSync(passwordFile)) fs.writeFileSync(passwordFile, randomBytes(32).toString("hex"), { mode: 0o600, flag: "wx" });
+const settingsFile = path.join(root, "t3/userdata/settings.json");
+const settings = JSON.parse(fs.readFileSync(settingsFile, "utf8"));
+settings.providerInstances ??= {};
+settings.providerInstances.opencode ??= { driver: "opencode", enabled: true, config: {} };
+settings.providerInstances.opencode.config ??= {};
+Object.assign(settings.providerInstances.opencode.config, {
+  serverUrl: "http://127.0.0.1:4096",
+  serverPassword: fs.readFileSync(passwordFile, "utf8").trim(),
+});
+fs.writeFileSync(settingsFile, JSON.stringify(settings, null, 2) + "\n", { mode: 0o600 });
