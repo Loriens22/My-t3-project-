@@ -10,6 +10,9 @@ OpenCode helpers and conversation servers exhausted Railway's 1,000,000,000-byte
 memory limit in a reproducible file-generation test (`oom_kill=1`, displayed by
 T3 as `OpenCode server exited unexpectedly (0)`). `supervise.mjs` starts OpenCode
 before T3 and stops both if either exits. Only T3 port 3773 is public.
+OpenCode also receives Bun's small-memory mode and a 512 MiB RAM hint for garbage
+collection. Sharing the process alone still hit the limit during a long streamed
+tool call. The RAM hint guides collection; it is not a hard memory cap.
 
 Before startup, `configure.mjs` reads OpenCode's native model catalog and permits
 all models whose reported input, output and cache costs are zero. It updates the

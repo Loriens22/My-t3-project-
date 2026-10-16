@@ -45,6 +45,10 @@ const launch = (name, binary, args, environment = process.env) => {
 
 launch("opencode-server", "/opt/t3/node_modules/.bin/opencode", ["serve", "--hostname=127.0.0.1", "--port=4096"], {
   ...process.env, OPENCODE_SERVER_PASSWORD: password,
+  // Bun's GC can size itself for the host rather than this container. Give the
+  // shared engine half the instance's RAM and collect more often while streaming.
+  BUN_JSC_forceRAMSize: "536870912",
+  BUN_OPTIONS: [process.env.BUN_OPTIONS, "--smol"].filter(Boolean).join(" "),
 });
 const headers = { Authorization: "Basic " + Buffer.from("opencode:" + password).toString("base64") };
 const healthy = () => new Promise((resolve) => {
