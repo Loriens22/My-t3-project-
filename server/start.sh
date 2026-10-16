@@ -38,5 +38,6 @@ if [[ "${T3_PRIVATE_ONBOARDING:-0}" == "1" ]]; then
     | node -e 'let s=""; process.stdin.on("data",c=>s+=c); process.stdin.on("end",()=>{ const p=JSON.parse(s); console.log("PHONE_PAIRING_CODE: "+p.credential); console.log("PHONE_PAIRING_EXPIRES_AT: "+p.expiresAt); });'
 fi
 # Keep startup grants and diagnostics off public HTTP endpoints and normal logs.
+node /app/server/monitor.mjs &
 exec "$t3_native" serve --host 0.0.0.0 --port "$PORT" --base-dir "$T3CODE_HOME" \
-  >"$T3_PHONE_ROOT/server.log" 2>&1
+  >>"$T3_PHONE_ROOT/server.log" 2>&1
