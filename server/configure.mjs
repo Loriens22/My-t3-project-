@@ -59,7 +59,7 @@ if (JSON.stringify(previous) !== JSON.stringify(freeModels)) {
 }
 console.log(`OpenCode catalog: ${freeModels.length} models with zero input/output/cache prices.`);
 writeNew("t3/userdata/settings.json", {
-  defaultModelSelection: selection,
+  defaultModelSelection: { ...selection, options: [{ id: "variant", value: "high" }] },
   textGenerationModelSelection: { ...selection, options: [{ id: "agent", value: "title" }] },
   defaultRuntimeMode: "approval-required",
   addProjectBaseDirectory: path.join(root, "projects"),
@@ -75,6 +75,12 @@ const passwordFile = path.join(root, "opencode-server-password");
 if (!fs.existsSync(passwordFile)) fs.writeFileSync(passwordFile, randomBytes(32).toString("hex"), { mode: 0o600, flag: "wx" });
 const settingsFile = path.join(root, "t3/userdata/settings.json");
 const settings = JSON.parse(fs.readFileSync(settingsFile, "utf8"));
+if (settings.defaultModelSelection?.model === selection.model &&
+    !settings.defaultModelSelection.options?.some((option) => option.id === "variant")) {
+  settings.defaultModelSelection.options = [
+    ...(settings.defaultModelSelection.options || []), { id: "variant", value: "high" },
+  ];
+}
 // OpenCode's own title agent supports tool-free metadata requests on the free
 // endpoint; a build agent with every tool denied is rejected by that endpoint.
 if (settings.textGenerationModelSelection?.instanceId === "opencode" &&

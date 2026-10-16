@@ -22,6 +22,12 @@ Metadata generation uses OpenCode's built-in `title` agent. Its free endpoint
 accepts native title requests; it rejected the previous build-agent requests
 with every tool denied. The normal coding model keeps the `build` agent.
 
+New DeepSeek threads default to `high` reasoning. In a live `max` test, the model
+used all 32,000 available output tokens for reasoning, returned zero answer
+tokens and wrote no file (`finish=length`). T3 V1 displayed that turn as completed.
+This is a separate model-output limit, so checking completion alone is insufficient:
+verify the actual generated file. Existing per-thread options are preserved.
+
 Deployment requirements:
 
 - Connect the owner's Railway account before creating any hosted resources.
