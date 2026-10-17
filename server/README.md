@@ -31,6 +31,38 @@ tokens and wrote no file (`finish=length`). T3 V1 displayed that turn as complet
 This is a separate model-output limit, so checking completion alone is insufficient:
 verify the actual generated file. Existing per-thread options are preserved.
 
+The owner requested persistent Full access on 2026-10-17. New installations and
+the one-time migration use `defaultRuntimeMode: full-access`; OpenCode's global
+permission is `allow`. Existing T3 threads are updated through the runtime-mode
+command, so their native session rules refresh when they resume. A user can still
+choose a restricted mode explicitly in T3.
+
+Keep Railway's `sleepApplication` disabled. The idle-sleep setting repeatedly
+stopped the environment on 2026-10-17; Android's discovery request took 8.7 seconds
+while the container was waking. An always-running service consumes the existing
+trial credit while idle too; no paid plan is enabled by this setting.
+
+## NVIDIA NIM from the phone
+
+The V1 mobile app selects OpenCode's models but has no OpenCode API-key settings
+form. The owner enters their key in Railway, service `t3-code`, Variables,
+`NVIDIA_API_KEY`, then deploys the variable change. Keep the value out of chat,
+Git and command output. The prepared variable starts empty.
+
+At startup, the key enables the `nvidia` provider alongside the free `opencode`
+provider. Its official endpoint is `https://integrate.api.nvidia.com/v1`. The
+configuration references `{env:NVIDIA_API_KEY}` and stores no key in the repo.
+The catalog intersects NVIDIA's public model list with OpenCode's models that
+support tools, excluding embeddings, image generators and other non-agent APIs.
+There are 21 compatible models in the bundled 2026-10-17 snapshot; startup can
+refresh this list from NVIDIA and OpenCode's model metadata. NVIDIA account
+quotas apply independently of OpenCode's free offers. DeepSeek through OpenCode
+remains the default; adding the key does not switch existing conversations.
+
+When the key is absent, NVIDIA stays disabled and the existing free models work
+normally. After adding the key and deployment completes, reopen T3 and refresh
+the model list; the additional group is named `NVIDIA NIM`.
+
 Deployment requirements:
 
 - Connect the owner's Railway account before creating any hosted resources.

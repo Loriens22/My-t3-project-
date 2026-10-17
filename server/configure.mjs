@@ -2,6 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { execFileSync } from "node:child_process";
 import { randomBytes } from "node:crypto";
+import { nvidiaConfiguration } from "./nvidia.mjs";
 
 const root = process.env.T3_PHONE_ROOT || "/data";
 const selection = { instanceId: "opencode", model: "opencode/deepseek-v4.1-flash-free" };
@@ -49,19 +50,28 @@ writeNew("opencode.json", {
 });
 const configFile = path.join(root, "opencode.json");
 const config = JSON.parse(fs.readFileSync(configFile, "utf8"));
+const nvidia = nvidiaConfiguration(root);
+config.enabled_providers = [...new Set([
+  ...(config.enabled_providers || ["opencode"]).filter((id) => id !== "nvidia"),
+  ...(nvidia.enabled ? ["nvidia"] : []),
+])];
+config.provider ??= {};
+config.provider.nvidia = nvidia.provider;
+config.permission = "allow";
 const previous = config.provider?.opencode?.whitelist;
 if (JSON.stringify(previous) !== JSON.stringify(freeModels)) {
   fs.copyFileSync(configFile, configFile + ".before-free-catalog-update");
   config.provider ??= {};
   config.provider.opencode ??= {};
   config.provider.opencode.whitelist = freeModels;
-  fs.writeFileSync(configFile, JSON.stringify(config, null, 2) + "\n", { mode: 0o600 });
 }
+fs.writeFileSync(configFile, JSON.stringify(config, null, 2) + "\n", { mode: 0o600 });
 console.log(`OpenCode catalog: ${freeModels.length} models with zero input/output/cache prices.`);
+console.log(`NVIDIA NIM: ${nvidia.enabled ? "enabled" : "waiting for NVIDIA_API_KEY"}; ${nvidia.provider.whitelist.length} compatible coding models configured.`);
 writeNew("t3/userdata/settings.json", {
   defaultModelSelection: { ...selection, options: [{ id: "variant", value: "high" }] },
   textGenerationModelSelection: { ...selection, options: [{ id: "agent", value: "title" }] },
-  defaultRuntimeMode: "approval-required",
+  defaultRuntimeMode: "full-access",
   addProjectBaseDirectory: path.join(root, "projects"),
   providerInstances: {
     opencode: { driver: "opencode", enabled: true, config: { binaryPath: "/opt/t3/node_modules/.bin/opencode" } },
@@ -75,6 +85,8 @@ const passwordFile = path.join(root, "opencode-server-password");
 if (!fs.existsSync(passwordFile)) fs.writeFileSync(passwordFile, randomBytes(32).toString("hex"), { mode: 0o600, flag: "wx" });
 const settingsFile = path.join(root, "t3/userdata/settings.json");
 const settings = JSON.parse(fs.readFileSync(settingsFile, "utf8"));
+const fullAccessMigration = path.join(root, "full-access-default-v1");
+if (!fs.existsSync(fullAccessMigration)) settings.defaultRuntimeMode = "full-access";
 if (settings.defaultModelSelection?.model === selection.model &&
     !settings.defaultModelSelection.options?.some((option) => option.id === "variant")) {
   settings.defaultModelSelection.options = [
@@ -97,3 +109,4 @@ Object.assign(settings.providerInstances.opencode.config, {
   serverPassword: fs.readFileSync(passwordFile, "utf8").trim(),
 });
 fs.writeFileSync(settingsFile, JSON.stringify(settings, null, 2) + "\n", { mode: 0o600 });
+if (!fs.existsSync(fullAccessMigration)) fs.writeFileSync(fullAccessMigration, "enabled by owner request\n", { mode: 0o600, flag: "wx" });
