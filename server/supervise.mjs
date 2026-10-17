@@ -44,7 +44,7 @@ const launch = (name, binary, args, environment = process.env) => {
 };
 
 launch("opencode-server", "/opt/t3/node_modules/.bin/opencode", ["serve", "--hostname=127.0.0.1", "--port=4096"], {
-  ...process.env, OPENCODE_SERVER_PASSWORD: password,
+  ...process.env, OPENCODE_PASSWORD: password,
   // Bun's GC can size itself for the host rather than this container. Give the
   // shared engine half the instance's RAM and collect more often while streaming.
   BUN_JSC_forceRAMSize: "536870912",
@@ -52,9 +52,20 @@ launch("opencode-server", "/opt/t3/node_modules/.bin/opencode", ["serve", "--hos
 });
 const headers = { Authorization: "Basic " + Buffer.from("opencode:" + password).toString("base64") };
 const healthy = () => new Promise((resolve) => {
-  const request = http.get("http://127.0.0.1:4096/global/health", { headers, timeout: 1500 }, (response) => {
-    response.resume();
-    resolve(response.statusCode === 200);
+  const request = http.get("http://127.0.0.1:4096/api/info", { headers, timeout: 1500 }, (response) => {
+    let body = "";
+    response.setEncoding("utf8");
+    response.on("data", (chunk) => {
+      body += chunk;
+      if (body.length > 65536) request.destroy();
+    });
+    response.on("end", () => {
+      try {
+        const info = JSON.parse(body);
+        resolve(response.statusCode === 200 && /^2\./.test(info.version));
+      } catch { resolve(false); }
+    });
+    response.on("error", () => resolve(false));
   });
   request.on("error", () => resolve(false));
   request.on("timeout", () => request.destroy());

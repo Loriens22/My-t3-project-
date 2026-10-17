@@ -1,8 +1,12 @@
 # Hosted T3 Code
 
 This Docker deployment is prepared for Railway. It runs the same verified T3 Code
-0.0.45 and OpenCode 1.19.1. Keep this T3 version while using the V1 Android app:
-the new T3 0.1 server requires the separate V2 mobile update.
+0.1.0 and OpenCode 2.0.32, compatible with the Android 2.0 app and orchestration
+protocol 2. The older 0.0.45 server rejects that app with “Client not supported”.
+Versions are pinned together; a working HTML page alone does not verify mobile
+compatibility. Check `/.well-known/t3/environment` and authenticated WebSocket
+RPC using `?orchestrationProtocol=2` plus HTTP header
+`x-t3-orchestration-protocol: 2`.
 
 One password-protected OpenCode server listens on loopback port 4096. T3's
 conversations, model discovery and text generation all share it. Starting separate
@@ -14,16 +18,20 @@ OpenCode also receives Bun's small-memory mode and a 512 MiB RAM hint for garbag
 collection. Sharing the process alone still hit the limit during a long streamed
 tool call. The RAM hint guides collection; it is not a hard memory cap.
 
-Before startup, `configure.mjs` reads OpenCode's native model catalog and permits
+Before startup, `configure.mjs` calls OpenCode 2's native `model.list` API through
+a temporary standalone process and permits
 all models whose reported input, output and cache costs are zero. It updates the
 persisted configuration too, preserving a backup and the other configuration
-fields. On 2026-10-16 this returned 10 models, including Big Pickle and DeepSeek
+fields. V1 whitelist settings are no longer supported in OpenCode 2, so native
+model `disabled` switches enforce the catalog. Only public model metadata is
+cached; raw model responses contain credentials and must never be saved or logged.
+The verified catalog includes 10 models, including Big Pickle and DeepSeek
 V4.1 Flash Free. If discovery fails, a verified bundled catalog is used. Model
 availability and provider rate limits can change.
 
-Metadata generation uses OpenCode's built-in `title` agent. Its free endpoint
-accepts native title requests; it rejected the previous build-agent requests
-with every tool denied. The normal coding model keeps the `build` agent.
+T3 0.1 uses OpenCode 2 temporary sessions for metadata generation; the free
+endpoint rejects stateless generate calls. The old title-agent setting is retained
+for migrated settings, while T3 selects the appropriate native session behavior.
 
 New DeepSeek threads default to `high` reasoning. In a live `max` test, the model
 used all 32,000 available output tokens for reasoning, returned zero answer
@@ -44,8 +52,8 @@ trial credit while idle too; no paid plan is enabled by this setting.
 
 ## NVIDIA NIM from the phone
 
-The V1 mobile app selects OpenCode's models but has no OpenCode API-key settings
-form. The owner enters their key in Railway, service `t3-code`, Variables,
+API credentials are configured on the server, and the mobile app selects
+the resulting OpenCode models. The owner enters their key in Railway, service `t3-code`, Variables,
 `NVIDIA_API_KEY`, then deploys the variable change. Keep the value out of chat,
 Git and command output. The prepared variable starts empty.
 
@@ -54,14 +62,36 @@ provider. Its official endpoint is `https://integrate.api.nvidia.com/v1`. The
 configuration references `{env:NVIDIA_API_KEY}` and stores no key in the repo.
 The catalog intersects NVIDIA's public model list with OpenCode's models that
 support tools, excluding embeddings, image generators and other non-agent APIs.
-There are 21 compatible models in the bundled 2026-10-17 snapshot; startup can
-refresh this list from NVIDIA and OpenCode's model metadata. NVIDIA account
+The bundled snapshot is a fallback; startup refreshes the list from NVIDIA and
+OpenCode 2's native model metadata and disables non-coding models explicitly.
+Catalog discovery without an available NVIDIA catalog leaves the provider disabled
+for that startup while retaining its key. NVIDIA account
 quotas apply independently of OpenCode's free offers. DeepSeek through OpenCode
 remains the default; adding the key does not switch existing conversations.
 
 When the key is absent, NVIDIA stays disabled and the existing free models work
 normally. After adding the key and deployment completes, reopen T3 and refresh
 the model list; the additional group is named `NVIDIA NIM`.
+
+
+## V1 to V2 migration
+
+Before the first V2 deployment, take verified SQLite backups of
+`/data/t3/userdata/state.sqlite` and `/data/data/opencode/opencode.db`, preserve
+the entire `userdata` directory except logs/WAL snapshots, and archive all
+workspaces. Include `userdata/secrets` and `environment-id` so existing device
+credentials and the environment identity remain valid. Keep backups private.
+
+T3 snapshots V1 into `statev2.sqlite`; V1 remains intact. The V2 importer preserves
+thread IDs, model selections, permission modes, workspaces, archives and user/assistant
+messages. Old native tool activity and provider bindings are not imported. The
+first continuation starts a fresh provider session with a bounded transcript
+handoff. OpenCode 2 also converts its database; never run OpenCode 1 and 2 together
+on that data, or roll back only the executable without restoring the matching
+backup. Read-only recovery from the V1 backup remains possible.
+
+Trace rotation is capped at three 2 MiB files rather than ten 10 MiB files on the
+500 MB data volume. Old rotated traces were archived before reclaiming their space.
 
 Deployment requirements:
 

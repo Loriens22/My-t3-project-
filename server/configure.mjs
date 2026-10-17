@@ -19,23 +19,34 @@ const writeNew = (name, value) => {
 // an active conversation for this server's 1 GB of memory.
 const bundledFreeModels = JSON.parse(fs.readFileSync(new URL("./free-models.json", import.meta.url), "utf8"));
 let freeModels = bundledFreeModels;
+let catalogModels = [];
+const catalogFile = path.join(root, "model-catalog-public.json");
+try { catalogModels = JSON.parse(fs.readFileSync(catalogFile, "utf8")); } catch {}
 const discoveryFile = path.join(root, "catalog-discovery.json");
-fs.writeFileSync(discoveryFile, JSON.stringify({ enabled_providers: ["opencode"] }), { mode: 0o600 });
+fs.writeFileSync(discoveryFile, JSON.stringify({ enabled_providers: [
+  "opencode", ...(process.env.NVIDIA_API_KEY?.trim() ? ["nvidia"] : []),
+] }), { mode: 0o600 });
 try {
-  const output = execFileSync(process.env.OPENCODE_BINARY || "/opt/t3/node_modules/.bin/opencode", ["models", "opencode", "--verbose"], {
+  const output = execFileSync(process.env.OPENCODE_BINARY || "/opt/t3/node_modules/.bin/opencode", ["api", "--standalone", "model.list"], {
     env: { ...process.env, OPENCODE_CONFIG: discoveryFile },
     encoding: "utf8", timeout: 60000, maxBuffer: 16 * 1024 * 1024,
-    stdio: ["ignore", "pipe", "pipe"],
+    stdio: ["ignore", "pipe", "pipe"], cwd: "/tmp",
   });
-  const entries = output.split(/\n(?=opencode\/)/).map((entry) => {
-    const start = entry.indexOf("{");
-    return start >= 0 ? JSON.parse(entry.slice(start)) : null;
-  }).filter(Boolean);
-  const allZero = (value) => typeof value === "number" ? value === 0
-    : value !== null && typeof value === "object" && Object.values(value).every(allZero);
-  const discovered = entries.filter((model) => model.cost?.input === 0 && model.cost?.output === 0 && allZero(model.cost)).map((model) => model.id);
+  const entries = JSON.parse(output).data;
+  // Keep only public model metadata. OpenCode's raw response also contains
+  // provider credentials, which must never be logged or saved to the catalog.
+  catalogModels = entries.map(({ id, providerID, name, capabilities, limit, status, cost, enabled }) =>
+    ({ id, providerID, name, capabilities, limit, status, cost, enabled }));
+  const zeroPrices = (cost) => cost.input === 0 && cost.output === 0 &&
+    Object.values(cost.cache || {}).every((price) => price === 0);
+  const discovered = entries.filter((model) => model.providerID === "opencode" &&
+    model.enabled !== false && model.status !== "deprecated" &&
+    Array.isArray(model.cost) && model.cost.length > 0 &&
+    model.cost.every(zeroPrices),
+  ).map((model) => model.id);
   if (!discovered.includes("deepseek-v4.1-flash-free")) throw new Error("Incomplete free model catalog");
   freeModels = [...new Set(discovered)].sort();
+  fs.writeFileSync(catalogFile, JSON.stringify(catalogModels) + "\n", { mode: 0o600 });
 } catch {
   console.warn("Free model discovery unavailable; keeping the verified free catalog.");
 } finally {
@@ -50,13 +61,28 @@ writeNew("opencode.json", {
 });
 const configFile = path.join(root, "opencode.json");
 const config = JSON.parse(fs.readFileSync(configFile, "utf8"));
-const nvidia = nvidiaConfiguration(root);
+const nvidia = nvidiaConfiguration(root, catalogModels);
 config.enabled_providers = [...new Set([
   ...(config.enabled_providers || ["opencode"]).filter((id) => id !== "nvidia"),
   ...(nvidia.enabled ? ["nvidia"] : []),
 ])];
 config.provider ??= {};
 config.provider.nvidia = nvidia.provider;
+// OpenCode 2 removed the V1 whitelist field. Native model switches enforce
+// the same curated list, including excluding embedding and safety-only APIs.
+config.providers ??= {};
+config.providers.opencode ??= {};
+config.providers.opencode.models = Object.fromEntries(
+  catalogModels.filter((model) => model.providerID === "opencode")
+    .map((model) => [model.id, { disabled: !freeModels.includes(model.id) }]),
+);
+config.providers.nvidia ??= {};
+config.providers.nvidia.models = Object.fromEntries(
+  [...new Set([
+    ...catalogModels.filter((model) => model.providerID === "nvidia").map((model) => model.id),
+    ...Object.keys(nvidia.provider.models),
+  ])].map((id) => [id, { disabled: !nvidia.provider.whitelist.includes(id) }]),
+);
 config.permission = "allow";
 const previous = config.provider?.opencode?.whitelist;
 if (JSON.stringify(previous) !== JSON.stringify(freeModels)) {
