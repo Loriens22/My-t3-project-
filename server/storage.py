@@ -10,7 +10,6 @@ import sqlite3
 import tempfile
 
 ROOT = Path(os.environ.get("T3_PHONE_ROOT", "/data"))
-MIN_FREE = 96 * 1024 * 1024
 MARKER = ROOT / "resource-recovery-v1"
 
 
@@ -47,8 +46,8 @@ for relative in ["cache", "config/opencode/node_modules"]:
 needs_recovery = not MARKER.exists()
 if needs_recovery:
     stamp = datetime.datetime.now(datetime.timezone.utc).strftime("%Y%m%dT%H%M%SZ")
-    backup = ROOT / "backups" / ("resource-recovery-" + stamp)
-    backup.mkdir(parents=True, mode=0o700)
+    backup = ROOT / "backups" / "resource-recovery-v1"
+    backup.mkdir(parents=True, exist_ok=True, mode=0o700)
     # Preserve diagnostics before reducing their size. Existing child processes
     # are not running yet, so these are stable files rather than live logs.
     logs = [ROOT / "server.log", ROOT / "opencode-server.log"]

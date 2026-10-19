@@ -2,6 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { execFileSync } from "node:child_process";
 import { randomBytes } from "node:crypto";
+import { createHash } from "node:crypto";
 import { nvidiaConfiguration } from "./nvidia.mjs";
 
 const root = process.env.T3_PHONE_ROOT || "/data";
@@ -36,8 +37,9 @@ try {
   const entries = JSON.parse(output).data;
   // Keep only public model metadata. OpenCode's raw response also contains
   // provider credentials, which must never be logged or saved to the catalog.
-  catalogModels = entries.map(({ id, providerID, name, capabilities, limit, status, cost, enabled }) =>
-    ({ id, providerID, name, capabilities, limit, status, cost, enabled }));
+  catalogModels = entries.map(({ id, providerID, name, capabilities, limit, status, cost, enabled, settings }) =>
+    ({ id, providerID, name, capabilities, limit, status, cost, enabled,
+      baseURL: settings?.baseURL }));
   const zeroPrices = (cost) => cost.input === 0 && cost.output === 0 &&
     Object.values(cost.cache || {}).every((price) => price === 0);
   const discovered = entries.filter((model) => model.providerID === "opencode" &&
@@ -84,6 +86,24 @@ config.providers.nvidia.models = Object.fromEntries(
     ...Object.keys(nvidia.provider.models),
   ])].map((id) => [id, { disabled: !nvidia.provider.whitelist.includes(id) }]),
 );
+const routes = {};
+for (const model of catalogModels) {
+  const entry = config.providers[model.providerID]?.models?.[model.id];
+  if (!entry || entry.disabled) continue;
+  // Only the native catalog's two known inference hosts can be forwarded.
+  // Model credentials and headers stay inside OpenCode and pass through intact.
+  const fallback = model.providerID === "opencode" ? "https://opencode.ai/inference/openai/v1" :
+    model.providerID === "nvidia" ? "https://integrate.api.nvidia.com/v1" : null;
+  const base = new URL(model.baseURL || fallback);
+  const expectedHost = model.providerID === "opencode" ? "opencode.ai" : "integrate.api.nvidia.com";
+  if (base.protocol !== "https:" || base.host !== expectedHost || base.username || base.password || base.search || base.hash) {
+    throw new Error("Unrecognized inference endpoint in the model catalog");
+  }
+  const id = createHash("sha256").update(base.href).digest("hex").slice(0, 16);
+  routes[id] = base.href;
+  entry.settings = { baseURL: `http://127.0.0.1:4098/${id}` };
+}
+fs.writeFileSync(path.join(root, "inference-routes.json"), JSON.stringify(routes) + "\n", { mode: 0o600 });
 config.permission = "allow";
 const previous = config.provider?.opencode?.whitelist;
 if (JSON.stringify(previous) !== JSON.stringify(freeModels)) {
