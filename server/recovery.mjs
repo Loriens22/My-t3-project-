@@ -44,6 +44,17 @@ const server = http.createServer(async (request, response) => {
       response.on("close", () => tar.kill("SIGTERM"));
       tar.on("error", () => response.destroy());
       tar.on("exit", (code) => { if (code && !response.writableEnded) response.destroy(); });
+    } else if (request.method === "POST" && request.url === "/recovery/acknowledge-backup") {
+      let body = "";
+      for await (const chunk of request) { body += chunk; if (body.length > 4096) throw new Error("Request too large"); }
+      const receipt = JSON.parse(body);
+      if (!/^[a-f0-9]{64}$/.test(receipt.archiveSha256) || receipt.verifiedDatabases !== 3) throw new Error("Verified archive receipt required");
+      const settingsFile = path.join(root, "t3/userdata/settings.json");
+      const settings = JSON.parse(fs.readFileSync(settingsFile, "utf8"));
+      settings.continueThreadsAfterServerUpdate = false;
+      fs.writeFileSync(settingsFile, JSON.stringify(settings, null, 2) + "\n", { mode: 0o600 });
+      fs.writeFileSync(path.join(root, "resource-recovery-v1"), JSON.stringify({ ...receipt, completedAt: new Date().toISOString() }) + "\n", { mode: 0o600 });
+      response.end(JSON.stringify({ backupAcknowledged: true }));
     } else if (request.method === "POST" && request.url === "/recovery/prune-archived-diagnostics") {
       let body = "";
       for await (const chunk of request) { body += chunk; if (body.length > 131072) throw new Error("Request too large"); }
@@ -52,7 +63,7 @@ const server = http.createServer(async (request, response) => {
       for (const entry of selected) {
         const file = path.resolve(root, entry.path);
         const relative = path.relative(root, file);
-        if (relative.startsWith("..") || path.isAbsolute(relative) ||
+        if (relative.startsWith("..") || path.isAbsolute(relative) || !fs.realpathSync(file).startsWith(fs.realpathSync(root) + path.sep) ||
             !/^(backups\/|(?:server|opencode-server)\.log(?:\.\d+)?$|t3\/userdata\/logs\/server\.trace\.ndjson(?:\..*)?$)/.test(relative) ||
             !fs.lstatSync(file).isFile()) throw new Error("File outside diagnostic archive scope");
         const hash = createHash("sha256");

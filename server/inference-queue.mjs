@@ -10,14 +10,14 @@ export async function inferenceQueue(routes, { port = 4098, storageRoot = "/data
   const agent = new https.Agent({ keepAlive: true, maxSockets: 1, proxyEnv: process.env });
   let active = null;
   let stopping = false;
-  const stats = { started: 0, completed: 0, cancelled: 0, failed: 0, maxActive: 0, maxWaiting: 0 };
+  const stats = { started: 0, completed: 0, cancelled: 0, failed: 0, maxActive: 0, maxWaiting: 0, responses: {} };
   const pump = () => {
     if (stopping || active || !waiting.length) return;
     const task = waiting.shift();
     if (task.response.destroyed) { pump(); return; }
     try {
       const disk = fs.statfsSync(storageRoot);
-      if (disk.bavail * disk.bsize < 24 * 1024 * 1024) {
+      if (disk.bavail * disk.bsize < 64 * 1024 * 1024) {
         task.response.writeHead(507, { "content-type": "application/json" });
         task.response.end(JSON.stringify({ error: { message: "Server storage is nearly full. New model requests are paused to protect saved conversations." } }));
         stats.failed++;
@@ -32,11 +32,13 @@ export async function inferenceQueue(routes, { port = 4098, storageRoot = "/data
       return;
     }
     active = task;
+    task.startedAt = Date.now();
     stats.started++;
     stats.maxActive = 1;
     const headers = { ...task.request.headers, host: task.target.host };
     for (const key of ["connection", "proxy-authorization", "proxy-connection", "keep-alive", "upgrade", "transfer-encoding", "te", "trailer"]) delete headers[key];
     const upstream = https.request(task.target, { method: task.request.method, headers, agent }, (reply) => {
+      stats.responses[reply.statusCode] = (stats.responses[reply.statusCode] || 0) + 1;
       const responseHeaders = { ...reply.headers };
       for (const key of ["connection", "keep-alive", "transfer-encoding"]) delete responseHeaders[key];
       task.response.writeHead(reply.statusCode, responseHeaders);
@@ -68,7 +70,7 @@ export async function inferenceQueue(routes, { port = 4098, storageRoot = "/data
   const server = http.createServer((request, response) => {
     if (request.method === "GET" && request.url === "/health") {
       response.writeHead(200, { "content-type": "application/json" });
-      response.end(JSON.stringify({ active: active ? 1 : 0, waiting: waiting.length, ...stats }));
+      response.end(JSON.stringify({ active: active ? 1 : 0, activeSeconds: active ? Math.round((Date.now() - active.startedAt) / 1000) : 0, waiting: waiting.length, ...stats }));
       return;
     }
     const match = /^\/([a-f0-9]{16})(\/[^#]*)?$/.exec(request.url);
@@ -93,13 +95,24 @@ export async function inferenceQueue(routes, { port = 4098, storageRoot = "/data
   });
   server.requestTimeout = 0;
   server.timeout = 0;
+  const storageGuard = setInterval(() => {
+    if (!active) return;
+    try {
+      const disk = fs.statfsSync(storageRoot);
+      if (disk.bavail * disk.bsize < 48 * 1024 * 1024) {
+        active.upstream?.destroy(Object.assign(new Error("Conversation storage reserve reached"), { code: "STORAGE_RESERVE" }));
+      }
+    } catch {}
+  }, 500);
+  storageGuard.unref();
   await new Promise((resolve, reject) => { server.once("error", reject); server.listen(port, "127.0.0.1", resolve); });
   return {
     server,
     close() {
       stopping = true;
+      clearInterval(storageGuard);
       for (const task of waiting.splice(0)) task.response.destroy();
-      if (active) { active.cancel(); active?.response.destroy(); }
+      if (active) { const task = active; task.cancel(); task.response.destroy(); }
       agent.destroy();
       server.closeAllConnections();
       server.close();
