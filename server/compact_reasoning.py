@@ -7,6 +7,7 @@ remain untouched. Keeping event rows also keeps ingestion deduplication intact.
 import hashlib
 import json
 import sqlite3
+import time
 from contextlib import contextmanager
 
 NOTICE = "[Intermediate reasoning snapshot compacted. The complete reasoning is preserved in the latest snapshot.]"
@@ -95,10 +96,21 @@ def incremental_reclaim(db, max_pages=4096):
     if db.execute("PRAGMA auto_vacuum").fetchone()[0] != 2:
         return {"incrementalVacuum": False}
     before = db.execute("PRAGMA page_count").fetchone()[0]
-    for _ in range(max_pages // 128):
-        if db.execute("PRAGMA freelist_count").fetchone()[0] == 0:
+    steps = 0
+    deadline = time.monotonic() + 2.5
+    while steps < max_pages and time.monotonic() < deadline:
+        free = db.execute("PRAGMA freelist_count").fetchone()[0]
+        if free == 0:
             break
-        db.execute("PRAGMA incremental_vacuum(128)").fetchall()
-        db.commit()
+        # SQLite 3.40 in the production image can reclaim only one page for
+        # incremental_vacuum(N), even after fetching the cursor. Explicit
+        # one-page steps work across versions; batching commits keeps locks and
+        # fsync overhead bounded while actually returning megabytes to the disk.
+        count = min(128, max_pages - steps, free)
+        with db:
+            db.execute("BEGIN IMMEDIATE")
+            for _ in range(count):
+                db.execute("PRAGMA incremental_vacuum(1)").fetchall()
+        steps += count
     checkpoint = db.execute("PRAGMA wal_checkpoint(TRUNCATE)").fetchone()
     return {"incrementalVacuum": True, "pagesReclaimed": before - db.execute("PRAGMA page_count").fetchone()[0], "checkpointBusy": checkpoint[0]}

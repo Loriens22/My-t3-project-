@@ -47,6 +47,13 @@ all 17 durable projection tables matched exactly. A real database fell from
 245,669,888 to 80,990,208 bytes. Tests also checked idempotence, physical page
 reclamation, log budgets and three simultaneous inference requests recovering
 from low space through a single cleanup worker.
+The production Debian image uses SQLite 3.40, whose incremental-vacuum behavior
+differs from the test host's SQLite 3.53. Reclamation explicitly steps one page
+at a time in short batches instead of relying on `incremental_vacuum(N)` to
+return N pages. An automatic timer test on the actual image returned 33,595,392
+physical bytes while preserving every message and event row. A live test also
+completed three real child agents inside one T3 conversation without approvals
+or OOM kills; all three output files were checked.
 
 `inference-queue.mjs` runs inside the existing supervisor on loopback port 4098.
 Native model endpoint overrides send inference through a FIFO queue shared by
