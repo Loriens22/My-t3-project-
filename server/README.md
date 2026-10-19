@@ -18,6 +18,53 @@ OpenCode also receives Bun's small-memory mode and a 512 MiB RAM hint for garbag
 collection. Sharing the process alone still hit the limit during a long streamed
 tool call. The RAM hint guides collection; it is not a hard memory cap.
 
+## Multiple conversations and storage protection
+
+`inference-queue.mjs` runs inside the existing supervisor on loopback port 4098.
+Native model endpoint overrides send inference through a FIFO queue shared by
+OpenCode's free models and NVIDIA. One upstream stream runs at a time. Request
+bodies wait with backpressure; responses stream without collecting them in memory.
+Credentials, native headers, model parameters and tool policies pass through
+unchanged. Routes are limited to the native catalog's known HTTPS inference hosts.
+The queue respects environment proxies and CA trust.
+
+The slot is released before tool execution. This allows a parent agent to wait
+for a delegated agent without holding the child's inference slot. Cancelling a
+waiting request removes it; cancelling an active request aborts its upstream.
+This limits inference overlap; external builds, browsers and shell commands
+still share the server's 1 GB. The queue does not make the hosting quota unlimited.
+
+Cache files use `/tmp/t3-cache`. Each child process log rotates at 2 MiB with two
+older copies, and native traces use `Warn` with three 2 MiB files. New inference
+requires 64 MiB free on `/data`; an active stream is aborted below 48 MiB. This
+leaves room to persist the failure and keep existing conversations readable.
+No history or project files are automatically pruned. Railway's restart policy
+is `ON_FAILURE` with ten retries; idle sleep remains disabled.
+
+`storage.py` performs the first cold recovery before either runtime starts. It
+removes regenerable caches, verifies compressed diagnostic archives and SQLite
+backups before checkpointing, preserves credentials, and avoids replaying all
+interrupted work together. A marker prevents repeated database backups. Check
+the archive and available space before attempting recovery on a full volume.
+
+If even a backup cannot fit, an operator can temporarily enable
+`T3_RECOVERY_ONLY=1` with a fresh secret `T3_RECOVERY_TOKEN` of at least 48
+characters. Only the maintenance process runs. Authenticated archive export allows
+off-volume verification before pruning diagnostic files by matching SHA-256.
+The backup acknowledgement is only for an independently verified full archive
+and three verified SQLite databases. Clear both variables before redeploying
+normally. Archives include private credentials and must never enter Git or logs.
+
+On 2026-10-19, the restored environment's 51 conversations and 189 messages
+matched the verified cold archive. Four native tool tasks submitted together
+completed on a 1,000,000,000-byte test container without approvals or OOM kills.
+The test verified actual files and their computed results. The largest observed
+test memory peak was 727,822,336 bytes; production also uses reclaimable file
+cache, so raw `memory.current` is not its unreclaimable working set.
+Four further tasks on the restored Railway service used DeepSeek Free, Big Pickle
+and NVIDIA GPT-OSS 20B together. All completed with verified file results within
+67 seconds, no approval requests, and `oom=0; oom_kill=0` throughout.
+
 Before startup, `configure.mjs` calls OpenCode 2's native `model.list` API through
 a temporary standalone process and permits
 all models whose reported input, output and cache costs are zero. It updates the
@@ -25,7 +72,7 @@ persisted configuration too, preserving a backup and the other configuration
 fields. V1 whitelist settings are no longer supported in OpenCode 2, so native
 model `disabled` switches enforce the catalog. Only public model metadata is
 cached; raw model responses contain credentials and must never be saved or logged.
-The verified catalog includes 10 models, including Big Pickle and DeepSeek
+The catalog includes Big Pickle and DeepSeek
 V4.1 Flash Free. If discovery fails, a verified bundled catalog is used. Model
 availability and provider rate limits can change.
 
@@ -98,7 +145,8 @@ Deployment requirements:
 - Connect the owner's Railway account before creating any hosted resources.
 - Use the existing GitHub repository and the root `Dockerfile`.
 - Attach a persistent volume at `/data` **before first startup**. Keep the tools
-  in the image; the volume stores projects, history, authentication and caches.
+  in the image; the volume stores projects, history and authentication. Download
+  caches stay on temporary storage.
 - Create one public HTTPS service domain pointing at port 3773 (or `$PORT`).
 - Stay on the account's Free/Trial plan. Do not add a paid plan or payment method.
 - Verify outbound access to OpenCode; a Limited Trial can restrict networking.
