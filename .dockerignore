@@ -2,3 +2,4 @@
 !Dockerfile
 !server/
 !server/**
+server/__pycache__/

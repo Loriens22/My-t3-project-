@@ -15,6 +15,7 @@ if [[ "${T3_RECOVERY_ONLY:-0}" == "1" ]]; then
   exec node /app/server/recovery.mjs
 fi
 python3 /app/server/storage.py
+PYTHONDONTWRITEBYTECODE=1 python3 /app/server/storage_maintenance.py --cold
 node /app/server/configure.mjs
 cd "$T3_PHONE_ROOT/projects/my-project"
 if [[ ! -d .git ]]; then

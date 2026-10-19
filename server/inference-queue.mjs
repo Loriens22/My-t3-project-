@@ -5,13 +5,21 @@ import fs from "node:fs";
 // Serialize inference streams, including metadata and delegated-agent calls.
 // Waiting at the HTTP boundary releases a slot before any tool starts, so a
 // parent waiting for its child agent cannot hold the child's inference slot.
-export async function inferenceQueue(routes, { port = 4098, storageRoot = "/data" } = {}) {
+export async function inferenceQueue(routes, { port = 4098, storageRoot = "/data", maintenance } = {}) {
   const waiting = [];
   const agent = new https.Agent({ keepAlive: true, maxSockets: 1, proxyEnv: process.env });
   let active = null;
   let stopping = false;
+  let admitting = false;
   const stats = { started: 0, completed: 0, cancelled: 0, failed: 0, maxActive: 0, maxWaiting: 0, responses: {} };
-  const pump = () => {
+  const pump = async () => {
+    if (stopping || active || admitting || !waiting.length) return;
+    admitting = true;
+    try {
+      const disk = fs.statfsSync(storageRoot);
+      if (maintenance && disk.bavail * disk.bsize < 128 * 1024 * 1024) await maintenance.ensureSpace();
+    } catch {}
+    admitting = false;
     if (stopping || active || !waiting.length) return;
     const task = waiting.shift();
     if (task.response.destroyed) { pump(); return; }
@@ -70,7 +78,14 @@ export async function inferenceQueue(routes, { port = 4098, storageRoot = "/data
   const server = http.createServer((request, response) => {
     if (request.method === "GET" && request.url === "/health") {
       response.writeHead(200, { "content-type": "application/json" });
-      response.end(JSON.stringify({ active: active ? 1 : 0, activeSeconds: active ? Math.round((Date.now() - active.startedAt) / 1000) : 0, waiting: waiting.length, ...stats }));
+      response.end(JSON.stringify({ active: active ? 1 : 0, activeSeconds: active ? Math.round((Date.now() - active.startedAt) / 1000) : 0, waiting: waiting.length, maintenance: maintenance?.status(), ...stats }));
+      return;
+    }
+    if (request.method === "POST" && request.url === "/maintenance" && maintenance) {
+      void maintenance.ensureSpace(true).then((result) => {
+        response.writeHead(200, { "content-type": "application/json" });
+        response.end(JSON.stringify(result));
+      }).catch(() => { response.writeHead(503); response.end(); });
       return;
     }
     const match = /^\/([a-f0-9]{16})(\/[^#]*)?$/.exec(request.url);

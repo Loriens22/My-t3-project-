@@ -20,6 +20,34 @@ tool call. The RAM hint guides collection; it is not a hard memory cap.
 
 ## Multiple conversations and storage protection
 
+`storage-maintenance.mjs` runs one bounded Python cleanup worker every 15 seconds,
+and inference admission awaits the same worker when less than 128 MiB remains.
+Concurrent calls share the worker. Provider/OpenCode diagnostic logs are capped
+in place, without unlinking open files or pruning project folders.
+
+T3 0.1 records growing reasoning text as repeated full `turn-item.updated`
+snapshots. `compact_reasoning.py` replaces only superseded, already-projected
+reasoning text copies with a short notice. It preserves the first and two newest
+complete snapshots, every event row/ID/sequence, stream versions, message text,
+tool results, plans and all materialized views. Retaining rows preserves ingestion
+deduplication and first-write item positions. The V2 schema/version and projection
+watermark restrict the operation. The full latest reasoning remains readable.
+
+Both databases use incremental auto-vacuum so reclamation returns physical pages
+to the volume. The first conversion prepares a checked copy off-volume, retains
+a verified compressed backup there, and replaces the persistent database only
+after a complete, fsynced staging file is ready. If staging needs more room, the
+unused V1 import database can be retained as the verified compressed
+`/data/backups/legacy-v1-state.sqlite.gz`; the active V2 database is untouched.
+Subsequent cleanups operate in small SQLite transactions without restarting T3.
+No per-cleanup backup accumulation occurs on the 500 MB volume.
+
+Validation included actual T3 0.1 projection replay before and after compaction:
+all 17 durable projection tables matched exactly. A real database fell from
+245,669,888 to 80,990,208 bytes. Tests also checked idempotence, physical page
+reclamation, log budgets and three simultaneous inference requests recovering
+from low space through a single cleanup worker.
+
 `inference-queue.mjs` runs inside the existing supervisor on loopback port 4098.
 Native model endpoint overrides send inference through a FIFO queue shared by
 OpenCode's free models and NVIDIA. One upstream stream runs at a time. Request
