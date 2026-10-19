@@ -26,7 +26,7 @@ const files = () => {
   return result.sort((a, b) => b.bytes - a.bytes);
 };
 const server = http.createServer(async (request, response) => {
-  if (request.method === "GET" && request.url === "/.well-known/t3/environment") {
+  if (request.method === "GET" && ["/", "/.well-known/t3/environment"].includes(request.url)) {
     response.writeHead(200, { "content-type": "application/json" });
     response.end(JSON.stringify({ maintenance: true }));
     return;
