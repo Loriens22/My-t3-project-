@@ -2,6 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { spawn } from "node:child_process";
 import http from "node:http";
+import { rotatingLog } from "./rotating-log.mjs";
 import "./monitor.mjs";
 
 const root = process.env.T3_PHONE_ROOT || "/data";
@@ -24,9 +25,11 @@ const shutdown = (code) => {
 for (const signal of ["SIGTERM", "SIGINT"]) process.on(signal, () => shutdown(0));
 
 const launch = (name, binary, args, environment = process.env) => {
-  const fd = fs.openSync(path.join(root, name + ".log"), "a", 0o600);
-  const child = spawn(binary, args, { env: environment, stdio: ["ignore", fd, fd] });
-  fs.closeSync(fd);
+  const log = rotatingLog(path.join(root, name + ".log"));
+  const child = spawn(binary, args, { env: environment, stdio: ["ignore", "pipe", "pipe"] });
+  child.stdout.on("data", (chunk) => log.write(chunk));
+  child.stderr.on("data", (chunk) => log.write(chunk));
+  child.on("close", () => log.close());
   children.add(child);
   child.on("error", (error) => {
     console.error(`${name} could not start: ${error.code || "unknown error"}`);

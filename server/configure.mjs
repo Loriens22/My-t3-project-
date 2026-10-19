@@ -6,9 +6,10 @@ import { nvidiaConfiguration } from "./nvidia.mjs";
 
 const root = process.env.T3_PHONE_ROOT || "/data";
 const selection = { instanceId: "opencode", model: "opencode/deepseek-v4.1-flash-free" };
-for (const dir of ["t3/userdata", "data", "config", "cache", "projects/my-project"]) {
+for (const dir of ["t3/userdata", "data", "config", "projects/my-project"]) {
   fs.mkdirSync(path.join(root, dir), { recursive: true, mode: 0o700 });
 }
+fs.mkdirSync(process.env.XDG_CACHE_HOME || "/tmp/t3-cache", { recursive: true, mode: 0o700 });
 const writeNew = (name, value) => {
   const file = path.join(root, name);
   if (!fs.existsSync(file)) {

@@ -6,8 +6,9 @@ export T3CODE_HOME="$T3_PHONE_ROOT/t3"
 export OPENCODE_CONFIG="$T3_PHONE_ROOT/opencode.json"
 export XDG_DATA_HOME="$T3_PHONE_ROOT/data"
 export XDG_CONFIG_HOME="$T3_PHONE_ROOT/config"
-export XDG_CACHE_HOME="$T3_PHONE_ROOT/cache"
+export XDG_CACHE_HOME="${XDG_CACHE_HOME:-/tmp/t3-cache}"
 export PORT="${PORT:-3773}"
+python3 /app/server/storage.py
 node /app/server/configure.mjs
 cd "$T3_PHONE_ROOT/projects/my-project"
 if [[ ! -d .git ]]; then
