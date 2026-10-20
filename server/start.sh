@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 umask 077
+# Runtime memory limits must not turn a crash into a multi-gigabyte core file.
+ulimit -c 0
 export T3_PHONE_ROOT="${T3_PHONE_ROOT:-/data}"
 export T3CODE_HOME="$T3_PHONE_ROOT/t3"
 export OPENCODE_CONFIG="$T3_PHONE_ROOT/opencode.json"
@@ -45,4 +47,4 @@ if [[ "${T3_PRIVATE_ONBOARDING:-0}" == "1" ]]; then
     | node -e 'let s=""; process.stdin.on("data",c=>s+=c); process.stdin.on("end",()=>{ const p=JSON.parse(s); console.log("PHONE_PAIRING_CODE: "+p.credential); console.log("PHONE_PAIRING_EXPIRES_AT: "+p.expiresAt); });'
 fi
 # Keep startup grants and diagnostics off public HTTP endpoints and normal logs.
-exec node /app/server/supervise.mjs
+exec node --max-old-space-size=64 --max-semi-space-size=2 /app/server/supervise.mjs

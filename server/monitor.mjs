@@ -4,11 +4,14 @@ const root = process.env.T3_PHONE_ROOT || "/data";
 const logFile = path.join(root, "server.log");
 let offset = fs.existsSync(logFile) ? fs.statSync(logFile).size : 0;
 let previousEvents = "";
+let lastMemoryLog = 0;
 const tick = () => {
   try {
     const events = fs.readFileSync("/sys/fs/cgroup/memory.events", "utf8");
-    if (events !== previousEvents) {
-      previousEvents = events;
+    const significant = events.split("\n").filter((line) => /^(oom|oom_kill|oom_group_kill|high) /.test(line)).join(";");
+    if (significant !== previousEvents || Date.now() - lastMemoryLog >= 60000) {
+      previousEvents = significant;
+      lastMemoryLog = Date.now();
       const current = fs.readFileSync("/sys/fs/cgroup/memory.current", "utf8").trim();
       console.log("Memory diagnostic:", JSON.stringify({ currentBytes: Number(current), events: events.trim().replaceAll("\n", "; ") }));
     }

@@ -14,9 +14,34 @@ OpenCode helpers and conversation servers exhausted Railway's 1,000,000,000-byte
 memory limit in a reproducible file-generation test (`oom_kill=1`, displayed by
 T3 as `OpenCode server exited unexpectedly (0)`). `supervise.mjs` starts OpenCode
 before T3 and stops both if either exits. Only T3 port 3773 is public.
-OpenCode also receives Bun's small-memory mode and a 512 MiB RAM hint for garbage
-collection. Sharing the process alone still hit the limit during a long streamed
-tool call. The RAM hint guides collection; it is not a hard memory cap.
+OpenCode receives Bun's small-memory mode, a 256 MiB GC sizing hint and a separate
+320 MiB JSC heap ceiling. The native T3 Node server has a 224 MiB old-generation
+limit and 4 MiB semi-spaces; the supervisor uses 64 MiB and 2 MiB. These bound
+JavaScript heaps, not total RSS or the memory used by external tools and file cache.
+Core dumps are disabled to prevent a memory failure filling the project volume.
+
+`runtime-memory.cjs` is loaded only into the native server's Node runtime. An IPC
+heartbeat reports numeric heap statistics every five seconds; garbage collection
+can run under pressure. `runtime-health.mjs` independently checks both loopback
+HTTP APIs with real wall-clock deadlines, including trickling/hung responses.
+Three consecutive failures or a stalled heartbeat cause a clean failure exit,
+allowing Railway's restart policy to recover the service. Startup readiness has
+an actual 60-second deadline per service. Memory diagnostics are rate-limited.
+
+Browser verification tools can consume the remaining RAM even with serialized
+inference. `browser-resources.mjs` lowers Chrome/headless-shell CPU priority and
+raises their OOM score so a sudden spike preferentially loses the browser tool.
+Under working-set pressure or repeated health failures, it terminates the largest
+browser group older than ten seconds and larger than 64 MiB before restarting the
+core services. Remaining browser descendants are killed after five seconds only
+if their process start identities still match. File cache alone does not trigger
+cleanup. The calling agent receives the browser-tool failure and can retry;
+conversation data, source files and ordinary project servers are not pruned.
+
+Validation includes eight focused health/resource tests, four real concurrent
+tool-using chats and three real subagents in one chat. A frozen native server
+automatically restarted in 27 seconds and accepted the same authenticated WSS
+client afterward. Long or memory-heavy tasks still have to fit the hosting quota.
 
 ## Multiple conversations and storage protection
 
