@@ -18,6 +18,11 @@ if [[ "${T3_RECOVERY_ONLY:-0}" == "1" ]]; then
 fi
 python3 /app/server/storage.py
 PYTHONDONTWRITEBYTECODE=1 python3 /app/server/storage_maintenance.py --cold
+# Restore only reproducible dependency caches; readable conversations never
+# depend on object storage availability. A slow bucket cannot block the app.
+if ! timeout --signal=TERM --kill-after=5s 60s env PYTHONDONTWRITEBYTECODE=1 python3 /app/server/settled_archive.py --restore; then
+  echo "Dependency cache restoration deferred; the automatic worker will retry."
+fi
 node /app/server/configure.mjs
 cd "$T3_PHONE_ROOT/projects/my-project"
 if [[ ! -d .git ]]; then

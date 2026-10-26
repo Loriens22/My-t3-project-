@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import { spawn } from "node:child_process";
 
-export function storageMaintenance(root) {
+export function storageMaintenance(root, { archives } = {}) {
   let running = null;
   let child = null;
   let closed = false;
@@ -9,6 +9,7 @@ export function storageMaintenance(root) {
   let last = null;
   const free = () => { const disk = fs.statfsSync(root); return disk.bavail * disk.bsize; };
   const ensureSpace = (force = false) => {
+    if (free() < 128 * 1024 * 1024) archives?.run();
     if (running) return running;
     if (closed || (Date.now() - lastAt < 12000 && !force)) return Promise.resolve(last);
     running = new Promise((resolve) => {
@@ -45,7 +46,7 @@ export function storageMaintenance(root) {
   timer.unref();
   return {
     ensureSpace,
-    status: () => ({ running: Boolean(running), lastAt: lastAt ? new Date(lastAt).toISOString() : null, last }),
+    status: () => ({ running: Boolean(running), lastAt: lastAt ? new Date(lastAt).toISOString() : null, last, archive: archives?.status() }),
     close() { closed = true; clearInterval(timer); child?.kill("SIGTERM"); },
   };
 }

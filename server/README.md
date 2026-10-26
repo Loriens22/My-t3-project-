@@ -45,6 +45,58 @@ client afterward. Long or memory-heavy tasks still have to fit the hosting quota
 
 ## Multiple conversations and storage protection
 
+Settled and archived conversations are automatically copied to a private Railway
+bucket by `settled_archive.py`. A separate single worker runs every minute and
+is also requested below the 128 MiB reserve. Configure these service variables
+using bucket variable references, without copying credentials into source:
+
+```text
+T3_ARCHIVE_S3_ENDPOINT=${{t3-chat-archive.ENDPOINT}}
+T3_ARCHIVE_S3_BUCKET=${{t3-chat-archive.BUCKET}}
+T3_ARCHIVE_S3_ACCESS_KEY_ID=${{t3-chat-archive.ACCESS_KEY_ID}}
+T3_ARCHIVE_S3_SECRET_ACCESS_KEY=${{t3-chat-archive.SECRET_ACCESS_KEY}}
+T3_ARCHIVE_S3_REGION=${{t3-chat-archive.REGION}}
+T3_ARCHIVE_S3_URL_STYLE=virtual-host
+```
+
+Each version is a compressed, immutable snapshot of the thread's native event
+rows and current projections. Upload success alone never authorizes releasing
+local data: an independent full GET must match SHA256. An unavailable backend
+leaves originals intact. Current readable history, source files, provider resume
+state and device credentials remain persistent and immediately accessible in the
+same Android app. This is tiering of heavy data, not removal of entire native
+conversation records.
+
+For idle scratch workspaces whose owners are all Settled/Archived, reproducible
+`node_modules` move to a verified object-backed `/tmp` cache. Their original path
+becomes a symlink using an atomic Linux directory exchange. Sources stay on the
+volume. The commit rechecks native runs, background work, pending approvals,
+shared owners, processes and open writers. A two-minute settle grace avoids
+detached setup scripts. Unsafe links and active/shared-with-active workspaces
+are skipped. A durable manifest and inode-bound rollback handle interrupted
+swaps; package-lock hashes prevent restoring an outdated installation. Caches
+restore before startup with a 60-second overall budget, then retry periodically
+without preventing conversations opening. Dependency edits made while active
+are reproducible cache writes; their archive refreshes after settling again.
+
+Only already-projected, superseded string snapshots are shortened after archival.
+Every event row/ID/sequence/version, structural fields, prompt and first/latest
+two complete entity snapshots remain. All current native projections stay
+unchanged. Actual native replay of the current 47,731-event database reproduced
+all 17 durable tables and 4,399 item positions exactly after 536 snapshot updates.
+This returned about 5.4 MB of payload; dependencies provide most of the relief.
+Identifiers, current history and source files still grow with use, so a finite
+hosting quota remains finite. No paid plan is enabled by this feature.
+
+Private numeric status is in `/data/t3/archive/status.json` and in the loopback
+inference queue's maintenance status. Missing archive variables disable this
+feature safely. Never delete the bucket or persistent manifests while their
+dependency symlinks are in use. To restore caches manually on the service:
+
+```bash
+python3 /app/server/settled_archive.py --restore
+```
+
 `storage-maintenance.mjs` runs one bounded Python cleanup worker every 15 seconds,
 and inference admission awaits the same worker when less than 128 MiB remains.
 Concurrent calls share the worker. Provider/OpenCode diagnostic logs are capped

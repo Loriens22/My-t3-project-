@@ -4,6 +4,7 @@ import { spawn } from "node:child_process";
 import { rotatingLog } from "./rotating-log.mjs";
 import { inferenceQueue } from "./inference-queue.mjs";
 import { storageMaintenance } from "./storage-maintenance.mjs";
+import { settledArchive } from "./settled-archive.mjs";
 import { probeJson, runtimeHealth } from "./runtime-health.mjs";
 import { browserBudget } from "./browser-resources.mjs";
 import "./monitor.mjs";
@@ -12,7 +13,8 @@ const root = process.env.T3_PHONE_ROOT || "/data";
 const password = fs.readFileSync(path.join(root, "opencode-server-password"), "utf8").trim();
 const children = new Set();
 const browsers = browserBudget();
-const maintenance = storageMaintenance(root);
+const archives = settledArchive(root);
+const maintenance = storageMaintenance(root, { archives });
 const queue = await inferenceQueue(JSON.parse(fs.readFileSync(path.join(root, "inference-routes.json"), "utf8")), { storageRoot: root, maintenance });
 console.log("Private model queue ready: one inference stream at a time.");
 let stopping = false;
@@ -23,6 +25,7 @@ const shutdown = (code) => {
   watchdog?.close();
   browsers.close();
   maintenance.close();
+  archives.close();
   queue.close();
   for (const child of children) child.kill("SIGTERM");
   const timer = setTimeout(() => {
