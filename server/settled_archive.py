@@ -69,6 +69,18 @@ def read_json(file, default=None):
         return default
 
 
+def thread_storage_id(thread_id):
+    # Native delegated IDs are structured strings, not UUIDs. Keep existing
+    # UUID archive paths compatible; arbitrary IDs get a bounded safe key.
+    if (not isinstance(thread_id, str) or not thread_id or thread_id != thread_id.strip()
+            or len(thread_id.encode()) > 8192
+            or any(ord(c) < 32 or ord(c) == 127 for c in thread_id)):
+        raise Deferred("invalid_thread_id")
+    if re.fullmatch(r"[a-fA-F0-9-]{16,64}", thread_id):
+        return thread_id
+    return "id-" + hashlib.sha256(thread_id.encode()).hexdigest()
+
+
 def age_seconds(value, now):
     try:
         return now - datetime.fromisoformat(value.replace("Z", "+00:00")).timestamp()
@@ -269,9 +281,8 @@ def dependency_guard(dbfile, thread_id, workspace, grace=120):
 
 
 def archive_one(root, dbfile, thread_id, store, *, grace=120, compact_enabled=True):
-    if not re.fullmatch(r"[a-fA-F0-9-]{16,64}", thread_id):
-        raise Deferred("invalid_thread_id")
-    manifest_file = root / "t3/archive/threads" / (thread_id + ".json")
+    storage_id = thread_storage_id(thread_id)
+    manifest_file = root / "t3/archive/threads" / (storage_id + ".json")
     previous = read_json(manifest_file, {})
     current = previous
     with connect(dbfile) as db:
@@ -287,7 +298,7 @@ def archive_one(root, dbfile, thread_id, store, *, grace=120, compact_enabled=Tr
                 thread, sequence = thread_state(db, thread_id, tables, grace=grace)
                 count = snapshot(db, thread_id, sequence, packed, tables)
             digest = sha256_file(packed)
-            key = "v1/threads/" + thread_id + "/" + str(sequence) + "-" + digest + ".jsonl.gz"
+            key = "v1/threads/" + storage_id + "/" + str(sequence) + "-" + digest + ".jsonl.gz"
             verified = store.put_verified(key, packed)
             versions = previous.get("versions", [])
             if not any(v.get("key") == key for v in versions):

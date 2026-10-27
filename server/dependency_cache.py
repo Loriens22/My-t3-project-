@@ -345,6 +345,8 @@ def _validate_record(record, previous=False):
             or not record["workspace"].startswith("t3/scratch/")
             or not isinstance(record["locks"], dict) or set(record["locks"]) != set(LOCK_FILES)):
         raise DependencyCacheError("Dependency manifest is invalid")
+    if type(record.get("cacheLayout", 1)) is not int or record.get("cacheLayout", 1) not in (1, 2):
+        raise DependencyCacheError("Dependency cache layout is invalid")
     for field in ("treeDigest", "archiveSha256"):
         value = record[field]
         if not isinstance(value, str) or len(value) != 64 or any(c not in "0123456789abcdef" for c in value):
@@ -381,13 +383,29 @@ def _load_manifest(file):
     return record
 
 
-def _cache(identifier, digest):
+def _cache(identifier, digest, layout=2):
     if any(len(value) != 64 or any(c not in "0123456789abcdef" for c in value)
            for value in (identifier, digest)):
         raise DependencyCacheError("Dependency cache identifier is invalid")
+    if type(layout) is not int or layout not in (1, 2):
+        raise DependencyCacheError("Dependency cache layout is invalid")
     base = _real_directory(CACHE_ROOT, create=True)
     directory = _real_directory(base / identifier, create=True)
-    return directory / digest
+    if layout == 1:
+        return directory / digest
+    # Node resolves imported files through realpath before searching ancestors
+    # for bare sibling packages. The actual dependency root must therefore be
+    # named node_modules. Keep its wrapper disjoint from the deployed legacy
+    # digest directory: placing it inside that tree would mutate the migration
+    # source and break rollback/content verification.
+    wrapper = _real_directory(directory / "v2" / digest, create=True)
+    return wrapper / "node_modules"
+
+
+def _record_cache(identifier, record):
+    # Missing layout is the already-deployed layout, independently for both a
+    # current prepared record and its previous rollback record.
+    return _cache(identifier, record["treeDigest"], record.get("cacheLayout", 1))
 
 
 def _expected_link(path, target):
@@ -395,7 +413,7 @@ def _expected_link(path, target):
 
 
 def _ensure_cache(record, identifier, archive_file):
-    cache = _cache(identifier, record["treeDigest"])
+    cache = _record_cache(identifier, record)
     if cache.exists() or cache.is_symlink():
         if fingerprint(cache)["treeDigest"] != record["treeDigest"]:
             raise DependencyCacheError("Existing dependency cache has newer contents")
@@ -479,7 +497,7 @@ def offload(root, workspace, store, commit_guard):
         if live.is_symlink():
             if previous is None:
                 return {"offloaded": False, "reason": "unowned_symlink"}
-            previous_cache = _cache(identifier, previous["treeDigest"])
+            previous_cache = _record_cache(identifier, previous)
             if not _expected_link(live, previous_cache) or not previous_cache.is_dir():
                 return {"offloaded": False, "reason": "restore_pending"}
             source, refresh = previous_cache, True
@@ -489,7 +507,8 @@ def offload(root, workspace, store, commit_guard):
             return {"offloaded": False, "reason": "no_dependencies"}
         baseline = fingerprint(source)
         locks = lock_fingerprint(workspace)
-        if refresh and baseline["treeDigest"] == previous["treeDigest"] and locks == previous["locks"]:
+        if (refresh and previous.get("cacheLayout", 1) == 2
+                and baseline["treeDigest"] == previous["treeDigest"] and locks == previous["locks"]):
             return {"offloaded": False, "reason": "already_offloaded"}
         if baseline["fileBytes"] < MIN_BYTES:
             return {"offloaded": False, "reason": "small_dependencies"}
@@ -507,7 +526,7 @@ def offload(root, workspace, store, commit_guard):
             verified = store.put_verified(key, archive_file)
             if verified.get("sha256") != archive_digest or verified.get("key") != key:
                 raise DependencyCacheError("Dependency archive verification failed")
-            record = {"version": 1, "workspace": workspace.relative_to(root).as_posix(),
+            record = {"version": 1, "cacheLayout": 2, "workspace": workspace.relative_to(root).as_posix(),
                       **baseline, "archiveKey": key, "archiveSha256": archive_digest,
                       "archiveBytes": archive_file.stat().st_size, "locks": locks,
                       "state": "prepared", "cleanupStarted": False, "cleanupDone": False,
@@ -554,6 +573,7 @@ def offload(root, workspace, store, commit_guard):
             record.pop("previous", None)
             _write_manifest(manifest_file, record)
             return {"offloaded": True, "refreshed": refresh, "fileBytes": baseline["fileBytes"],
+                    "migrated": refresh and previous.get("cacheLayout", 1) != 2,
                     "bytesReclaimed": 0 if refresh or not cleaned else baseline["fileBytes"],
                     "cleanupPending": not cleaned}
 
@@ -565,7 +585,7 @@ def _restore_one(root, manifest_file, store, *, cold=False):
     if expected_manifest != manifest_file:
         raise DependencyCacheError("Dependency manifest identifier is invalid")
     live = workspace / "node_modules"
-    cache = _cache(identifier, record["treeDigest"])
+    cache = _record_cache(identifier, record)
     if not live.is_symlink():
         # Original or a newer npm install wins over an old archive. The only
         # cleanup allowed here is our pre-exchange symlink, never real data.
@@ -581,7 +601,7 @@ def _restore_one(root, manifest_file, store, *, cold=False):
     if not _expected_link(live, cache):
         previous = record.get("previous")
         if record["state"] == "prepared" and previous:
-            old_cache = _cache(identifier, previous["treeDigest"])
+            old_cache = _record_cache(identifier, previous)
             if _expected_link(live, old_cache) and _expected_link(stage, cache):
                 if not cold:
                     return "recovery_pending"

@@ -65,12 +65,18 @@ local data: an independent full GET must match SHA256. An unavailable backend
 leaves originals intact. Current readable history, source files, provider resume
 state and device credentials remain persistent and immediately accessible in the
 same Android app. This is tiering of heavy data, not removal of entire native
-conversation records.
+conversation records. Native child conversation IDs are structured strings;
+bounded hash keys archive them alongside UUID conversations without changing
+their native IDs or existing archive paths.
 
 For idle scratch workspaces whose owners are all Settled/Archived, reproducible
 `node_modules` move to a verified object-backed `/tmp` cache. Their original path
 becomes a symlink using an atomic Linux directory exchange. Sources stay on the
-volume. The commit rechecks native runs, background work, pending approvals,
+volume. The actual cache tree also ends in `node_modules`, preserving Node's
+self, sibling and scoped package resolution after following the symlink.
+Versioned manifests retain legacy cache recovery and migrate idle old links
+through the same verified guarded exchange. The commit rechecks native runs,
+background work, pending approvals,
 shared owners, processes and open writers. A two-minute settle grace avoids
 detached setup scripts. Unsafe links and active/shared-with-active workspaces
 are skipped. A durable manifest and inode-bound rollback handle interrupted

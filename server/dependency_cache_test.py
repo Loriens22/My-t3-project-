@@ -31,7 +31,13 @@ class DependencyCacheTest(unittest.TestCase):
         self.module = self.workspace / "node_modules"
         package = self.module / "example"
         package.mkdir(parents=True)
-        (package / "index.js").write_text("module.exports = 42;\n")
+        (package / "index.js").write_text("module.exports = require('t3-cache-hoisted-b') + require('@t3-cache/offset');\n")
+        hoisted = self.module / "t3-cache-hoisted-b"
+        hoisted.mkdir()
+        (hoisted / "index.js").write_text("module.exports = 40;\n")
+        scoped = self.module / "@t3-cache/offset"
+        scoped.mkdir(parents=True)
+        (scoped / "index.js").write_text("module.exports = 2;\n")
         (package / "large.dat").write_bytes(b"library-data-" * 100000)
         (package / "bin.js").write_text("#!/usr/bin/env node\nconsole.log(42);\n")
         (package / "bin.js").chmod(0o755)
@@ -62,12 +68,48 @@ class DependencyCacheTest(unittest.TestCase):
                                    check=True, capture_output=True, text=True)
         self.assertEqual(completed.stdout.strip(), "42")
 
+    def legacy(self):
+        """An actual deployed-layout fixture, without interpreting it as v2."""
+        identifier, manifest, _stage = cache._paths(self.root, self.workspace)
+        baseline = cache.fingerprint(self.module)
+        old_cache = cache._cache(identifier, baseline["treeDigest"], layout=1)
+        packed = self.base / "legacy-dependencies.tar.gz"
+        cache._pack(self.module, packed)
+        digest = cache.sha256_file(packed)
+        key = "dependencies/" + digest + ".tar.gz"
+        self.store.put_verified(key, packed)
+        shutil.copytree(self.module, old_cache, symlinks=True)
+        shutil.rmtree(self.module)
+        self.module.symlink_to(old_cache)
+        record = {"version": 1, "workspace": self.workspace.relative_to(self.root).as_posix(),
+                  **baseline, "archiveKey": key, "archiveSha256": digest,
+                  "archiveBytes": packed.stat().st_size, "locks": cache.lock_fingerprint(self.workspace),
+                  "state": "offloaded", "cleanupStarted": True, "cleanupDone": True}
+        cache._write_manifest(manifest, record)
+        return record, old_cache, packed
+
+    def prepared_migration(self, exchanged=False):
+        previous, old_cache, packed = self.legacy()
+        identifier, manifest, stage = cache._paths(self.root, self.workspace)
+        current = {**previous, "cacheLayout": 2, "state": "prepared",
+                   "cleanupStarted": False, "cleanupDone": False,
+                   "stageIdentity": cache._stage_identity(self.module),
+                   "stageLinkTarget": str(old_cache), "previous": previous}
+        new_cache = cache._ensure_cache(current, identifier, packed)
+        stage.symlink_to(new_cache)
+        cache._write_manifest(manifest, current)
+        if exchanged:
+            cache._exchange(self.module, stage)
+        return old_cache, new_cache, stage
+
     def test_import_and_executable_work_after_offload_and_cold_restore(self):
         self.node()
         result = self.offload()
         self.assertTrue(result["offloaded"])
         self.assertGreater(result["bytesReclaimed"], cache.MIN_BYTES)
         self.assertTrue(self.module.is_symlink())
+        self.assertEqual(self.module.resolve().name, "node_modules")
+        self.assertEqual(json.loads(self.manifest().read_text())["cacheLayout"], 2)
         self.assertEqual(cache.fingerprint(self.module.resolve()), self.original)
         self.node()
         self.assertEqual(subprocess.check_output([str(self.module / ".bin/example")], text=True).strip(), "42")
@@ -81,6 +123,106 @@ class DependencyCacheTest(unittest.TestCase):
         self.node()
         self.assertEqual(cache.fingerprint(self.module.resolve()), self.original)
         self.assertEqual(self.offload()["reason"], "already_offloaded")
+
+    def test_legacy_layout_is_migrated_under_guard_for_hoisted_and_scoped_imports(self):
+        previous, old_cache, _packed = self.legacy()
+        old_contents = cache.fingerprint(old_cache)
+        # Reproduce the real defect: the package can be found through the
+        # workspace symlink, but its hoisted sibling cannot be resolved after
+        # Node realpaths that package into the legacy digest-named directory.
+        broken = subprocess.run(["node", "app.js"], cwd=self.workspace,
+                                capture_output=True, text=True)
+        self.assertNotEqual(broken.returncode, 0)
+        self.assertIn("MODULE_NOT_FOUND", broken.stderr)
+        calls = []
+        @contextmanager
+        def guarded():
+            calls.append(True)
+            yield
+        migrated = self.offload(guard=guarded)
+        self.assertTrue(migrated["migrated"])
+        self.assertTrue(calls)
+        self.assertEqual(self.module.resolve().name, "node_modules")
+        self.assertEqual(cache.fingerprint(old_cache), old_contents)
+        self.assertFalse(self.module.resolve().is_relative_to(old_cache))
+        self.assertEqual(json.loads(self.manifest().read_text())["cacheLayout"], 2)
+        self.node()
+        shutil.rmtree(cache.CACHE_ROOT)
+        self.assertEqual(cache.restore_all(self.root, self.store, cold=True)["restored"], 1)
+        self.node()
+
+    def test_esm_self_reference_and_hoisted_scoped_import_survive_cold_restore(self):
+        package = self.module / "t3-cache-esm-a"
+        package.mkdir()
+        (package / "package.json").write_text(json.dumps({
+            "name": "t3-cache-esm-a", "type": "module",
+            "exports": {".": "./index.js", "./self": "./self.js"}}))
+        (package / "self.js").write_text("export default 40;\n")
+        (package / "index.js").write_text(
+            "import value from 't3-cache-esm-a/self';\n"
+            "import offset from '@t3-cache/offset';\n"
+            "export default value + offset;\n")
+        (self.workspace / "app.mjs").write_text("import value from 't3-cache-esm-a'; console.log(value);\n")
+        def run():
+            completed = subprocess.run(["node", "app.mjs"], cwd=self.workspace,
+                                       check=True, capture_output=True, text=True)
+            self.assertEqual(completed.stdout.strip(), "42")
+        run()
+        self.offload()
+        run()
+        shutil.rmtree(cache.CACHE_ROOT)
+        self.assertEqual(cache.restore_all(self.root, self.store, cold=True)["restored"], 1)
+        run()
+
+    def test_legacy_cold_restore_keeps_original_link_until_guarded_migration(self):
+        _previous, old_cache, _packed = self.legacy()
+        shutil.rmtree(cache.CACHE_ROOT)
+        restored = cache.restore_all(self.root, self.store, cold=True)
+        self.assertEqual(restored["restored"], 1)
+        self.assertEqual(Path(os.readlink(self.module)), old_cache)
+        self.assertNotIn("cacheLayout", json.loads(self.manifest().read_text()))
+        self.assertTrue(self.offload()["migrated"])
+        self.node()
+
+    def test_failed_migration_commit_restores_legacy_pointer_and_record(self):
+        previous, old_cache, _packed = self.legacy()
+        old_contents = cache.fingerprint(old_cache)
+        @contextmanager
+        def failed_commit():
+            yield
+            raise RuntimeError("commit failed")
+        with self.assertRaises(RuntimeError):
+            self.offload(guard=failed_commit)
+        self.assertEqual(Path(os.readlink(self.module)), old_cache)
+        self.assertEqual(json.loads(self.manifest().read_text()), previous)
+        self.assertEqual(cache.fingerprint(old_cache), old_contents)
+        self.assertFalse(list(self.workspace.glob(".t3-deps-original-*")))
+        self.assertTrue(self.offload()["migrated"])
+        self.node()
+
+    def test_interrupted_migration_before_exchange_recovers_previous_layout(self):
+        old_cache, _new_cache, stage = self.prepared_migration(exchanged=False)
+        shutil.rmtree(cache.CACHE_ROOT)
+        result = cache.restore_all(self.root, self.store, cold=True)
+        self.assertEqual(result["restored"], 1)
+        self.assertEqual(Path(os.readlink(self.module)), old_cache)
+        self.assertFalse(stage.is_symlink())
+        self.assertNotIn("cacheLayout", json.loads(self.manifest().read_text()))
+        self.assertTrue(self.offload()["migrated"])
+        self.node()
+
+    def test_interrupted_migration_after_exchange_restores_new_layout(self):
+        old_cache, new_cache, stage = self.prepared_migration(exchanged=True)
+        self.assertFalse(new_cache.is_relative_to(old_cache))
+        shutil.rmtree(cache.CACHE_ROOT)
+        result = cache.restore_all(self.root, self.store, cold=True)
+        self.assertEqual(result["restored"], 1)
+        self.assertEqual(Path(os.readlink(self.module)), new_cache)
+        self.assertFalse(stage.is_symlink())
+        current = json.loads(self.manifest().read_text())
+        self.assertEqual(current["cacheLayout"], 2)
+        self.assertNotIn("previous", current)
+        self.node()
 
     def test_upload_outage_preserves_original(self):
         with self.assertRaises(ArchiveStoreError):

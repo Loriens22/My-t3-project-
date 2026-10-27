@@ -166,6 +166,24 @@ class Fixture(unittest.TestCase):
         archive.archive_one(self.root, self.dbfile, A, self.store)
         self.assertEqual(self.payloads()[1], before)
 
+    def test_native_delegated_ids_are_archived_with_safe_bounded_keys(self):
+        child = "thread:delegated:../task/" + "parent-run%3A" * 70
+        self.thread(child)
+        self.events(child)
+        result = archive.archive_one(self.root, self.dbfile, child, self.store)
+        self.assertEqual(result["archived"], 1)
+        key = archive.thread_storage_id(child)
+        self.assertTrue(key.startswith("id-"))
+        self.assertEqual(len(key), 67)
+        manifest = json.loads((self.root / "t3/archive/threads" / (key + ".json")).read_text())
+        self.assertEqual(manifest["threadId"], child)
+        self.assertNotIn("..", manifest["current"]["key"])
+        self.assertLess(len(manifest["current"]["key"]), 1024)
+
+    def test_existing_uuid_archive_path_is_compatible(self):
+        self.assertEqual(archive.thread_storage_id(A), A)
+        self.assertNotEqual(archive.thread_storage_id("thread:x/y"), archive.thread_storage_id("thread:x%2Fy"))
+
 
 if __name__ == "__main__":
     unittest.main()
