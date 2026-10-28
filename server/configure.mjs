@@ -2,8 +2,9 @@ import fs from "node:fs";
 import path from "node:path";
 import { execFileSync } from "node:child_process";
 import { randomBytes } from "node:crypto";
-import { createHash } from "node:crypto";
 import { nvidiaConfiguration } from "./nvidia.mjs";
+import { configureKimiProviders, kimiDiscoveryProviders } from "./kimi.mjs";
+import { configureInferenceRoutes } from "./inference-routing.mjs";
 
 const root = process.env.T3_PHONE_ROOT || "/data";
 const selection = { instanceId: "opencode", model: "opencode/deepseek-v4.1-flash-free" };
@@ -26,7 +27,7 @@ const catalogFile = path.join(root, "model-catalog-public.json");
 try { catalogModels = JSON.parse(fs.readFileSync(catalogFile, "utf8")); } catch {}
 const discoveryFile = path.join(root, "catalog-discovery.json");
 fs.writeFileSync(discoveryFile, JSON.stringify({ enabled_providers: [
-  "opencode", ...(process.env.NVIDIA_API_KEY?.trim() ? ["nvidia"] : []),
+  "opencode", ...(process.env.NVIDIA_API_KEY?.trim() ? ["nvidia"] : []), ...kimiDiscoveryProviders(),
 ] }), { mode: 0o600 });
 try {
   const output = execFileSync(process.env.OPENCODE_BINARY || "/opt/t3/node_modules/.bin/opencode", ["api", "--standalone", "model.list"], {
@@ -86,23 +87,10 @@ config.providers.nvidia.models = Object.fromEntries(
     ...Object.keys(nvidia.provider.models),
   ])].map((id) => [id, { disabled: !nvidia.provider.whitelist.includes(id) }]),
 );
-const routes = {};
-for (const model of catalogModels) {
-  const entry = config.providers[model.providerID]?.models?.[model.id];
-  if (!entry || entry.disabled) continue;
-  // Only the native catalog's two known inference hosts can be forwarded.
-  // Model credentials and headers stay inside OpenCode and pass through intact.
-  const fallback = model.providerID === "opencode" ? "https://opencode.ai/inference/openai/v1" :
-    model.providerID === "nvidia" ? "https://integrate.api.nvidia.com/v1" : null;
-  const base = new URL(model.baseURL || fallback);
-  const expectedHost = model.providerID === "opencode" ? "opencode.ai" : "integrate.api.nvidia.com";
-  if (base.protocol !== "https:" || base.host !== expectedHost || base.username || base.password || base.search || base.hash) {
-    throw new Error("Unrecognized inference endpoint in the model catalog");
-  }
-  const id = createHash("sha256").update(base.href).digest("hex").slice(0, 16);
-  routes[id] = base.href;
-  entry.settings = { baseURL: `http://127.0.0.1:4098/${id}` };
-}
+const kimiStatus = configureKimiProviders(config, catalogModels);
+// Every configured provider shares the same inference queue. Native Kimi
+// adapters keep their protocol, reasoning settings, credentials and identity.
+const routes = configureInferenceRoutes(config, catalogModels);
 fs.writeFileSync(path.join(root, "inference-routes.json"), JSON.stringify(routes) + "\n", { mode: 0o600 });
 config.permission = "allow";
 const previous = config.provider?.opencode?.whitelist;
@@ -115,6 +103,9 @@ if (JSON.stringify(previous) !== JSON.stringify(freeModels)) {
 fs.writeFileSync(configFile, JSON.stringify(config, null, 2) + "\n", { mode: 0o600 });
 console.log(`OpenCode catalog: ${freeModels.length} models with zero input/output/cache prices.`);
 console.log(`NVIDIA NIM: ${nvidia.enabled ? "enabled" : "waiting for NVIDIA_API_KEY"}; ${nvidia.provider.whitelist.length} compatible coding models configured.`);
+for (const provider of kimiStatus) {
+  console.log(`${provider.name}: ${provider.enabled ? "enabled" : provider.reason === "missing_key" ? `waiting for ${provider.keyVariable}` : "native catalog unavailable"}; ${provider.modelCount} compatible coding models configured.`);
+}
 writeNew("t3/userdata/settings.json", {
   defaultModelSelection: { ...selection, options: [{ id: "variant", value: "high" }] },
   textGenerationModelSelection: { ...selection, options: [{ id: "agent", value: "title" }] },

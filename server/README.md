@@ -215,6 +215,47 @@ stopped the environment on 2026-10-17; Android's discovery request took 8.7 seco
 while the container was waking. An always-running service consumes the existing
 trial credit while idle too; no paid plan is enabled by this setting.
 
+## Kimi models from the phone
+
+T3 uses the existing OpenCode instance for Moonshot API and Kimi Code models.
+There is no additional Kimi CLI process or mobile-app rebuild. The services have
+separate credentials:
+
+| Service | Railway variable | Native model prefix |
+| --- | --- | --- |
+| Global Moonshot API | `MOONSHOT_API_KEY` | `moonshotai/` |
+| Global Kimi Code membership | `KIMI_API_KEY` | `kimi-code-plan-global/` |
+
+Enter the appropriate key only in Railway service `t3-code`, Variables, then
+deploy. Reopen T3 or refresh its model catalog. A provider is enabled only with
+its own key and current native tool-capable models. The Moonshot key does not
+activate a Kimi Code subscription. Moonshot API billing/balance and Code plan
+entitlements apply separately; no subscription or hosting upgrade is purchased.
+
+Current native catalogs include Kimi K3.1 Pro, its Highspeed variant, Kimi K3,
+Kimi K2.7 Code/HighSpeed and Kimi K2.6 for Moonshot. Code membership has its own
+six-model catalog and tier restrictions. Catalog refresh preserves the native
+capabilities and model limits; stale/unsupported entries stay disabled.
+
+Moonshot requests use OpenCode 2's bundled Moonshot chat adapter. Code models use
+the same native adapter as a declarative per-model package setting: the provider
+ID, `KIMI_API_KEY` binding and Code endpoint remain separate. This preserves
+reasoning across tool calls and provides the documented low/high/max variants;
+the Highspeed coding alias correctly has no effort variants. K3.1 Pro explicitly
+enables thinking, which that model requires. Client identity is unchanged.
+No protocol conversion or User-Agent spoofing is performed.
+
+Both services share the existing one-stream queue, storage reserve and automatic
+archive. The trusted endpoints are `https://api.moonshot.ai/v1` and
+`https://api.kimi.ai/coding/v1`. Public catalog files omit credentials, and the
+runtime reads keys from environment variables.
+
+Compatibility was exercised with the exact OpenCode 2.0.32 binary, local SSE
+fixtures, real shell execution and a second model turn preserving
+`reasoning_content`. An authenticated request still requires the owner's key.
+Official guides: [Moonshot API in OpenCode](https://platform.kimi.ai/docs/guide/open-code)
+and [Kimi Code in OpenCode](https://www.kimi.com/code/docs/en/third-party-tools/opencode.html).
+
 ## NVIDIA NIM from the phone
 
 API credentials are configured on the server, and the mobile app selects
