@@ -5,6 +5,7 @@ import { randomBytes } from "node:crypto";
 import { nvidiaConfiguration } from "./nvidia.mjs";
 import { configureKimiProviders, kimiDiscoveryProviders } from "./kimi.mjs";
 import { configureInferenceRoutes } from "./inference-routing.mjs";
+import { moonshotAccountCatalog } from "./moonshot-catalog.mjs";
 
 const root = process.env.T3_PHONE_ROOT || "/data";
 const selection = { instanceId: "opencode", model: "opencode/deepseek-v4.1-flash-free" };
@@ -87,7 +88,7 @@ config.providers.nvidia.models = Object.fromEntries(
     ...Object.keys(nvidia.provider.models),
   ])].map((id) => [id, { disabled: !nvidia.provider.whitelist.includes(id) }]),
 );
-const kimiStatus = configureKimiProviders(config, catalogModels);
+const kimiStatus = configureKimiProviders(config, catalogModels, process.env, await moonshotAccountCatalog());
 // Every configured provider shares the same inference queue. Native Kimi
 // adapters keep their protocol, reasoning settings, credentials and identity.
 const routes = configureInferenceRoutes(config, catalogModels);
@@ -104,7 +105,7 @@ fs.writeFileSync(configFile, JSON.stringify(config, null, 2) + "\n", { mode: 0o6
 console.log(`OpenCode catalog: ${freeModels.length} models with zero input/output/cache prices.`);
 console.log(`NVIDIA NIM: ${nvidia.enabled ? "enabled" : "waiting for NVIDIA_API_KEY"}; ${nvidia.provider.whitelist.length} compatible coding models configured.`);
 for (const provider of kimiStatus) {
-  console.log(`${provider.name}: ${provider.enabled ? "enabled" : provider.reason === "missing_key" ? `waiting for ${provider.keyVariable}` : "native catalog unavailable"}; ${provider.modelCount} compatible coding models configured.`);
+  console.log(`${provider.name}: ${provider.enabled ? "enabled" : provider.reason === "missing_key" ? `waiting for ${provider.keyVariable}` : provider.reason.replaceAll("_", " ")}; ${provider.modelCount} compatible coding models configured.`);
 }
 writeNew("t3/userdata/settings.json", {
   defaultModelSelection: { ...selection, options: [{ id: "variant", value: "high" }] },

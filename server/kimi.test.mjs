@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { configureKimiProviders, kimiDiscoveryProviders } from "./kimi.mjs";
 import { configureInferenceRoutes } from "./inference-routing.mjs";
+import { moonshotAccountCatalog } from "./moonshot-catalog.mjs";
 
 const moonshot = { providerID: "moonshotai", id: "kimi-k3.1-pro", enabled: true,
   status: "active", capabilities: { tools: true }, limit: { output: 1048576 }, baseURL: "https://api.moonshot.ai/v1" };
@@ -64,4 +65,37 @@ test("existing free and NVIDIA endpoint variants keep their stable queue route i
     { providerID: "nvidia", id: "openai/gpt-oss-20b", baseURL: "https://integrate.api.nvidia.com/v1" }];
   const config = { providers: Object.fromEntries(catalog.map(m => [m.providerID, { models: { [m.id]: { disabled: false } } }])) };
   assert.deepEqual(Object.values(configureInferenceRoutes(config, catalog)), catalog.map(m => m.baseURL));
+});
+
+test("Moonshot catalog is restricted to the authenticated account's models", () => {
+  const config = {};
+  const status = configureKimiProviders(config, [moonshot, { ...moonshot, id: "kimi-k2.7-code" }, coding],
+    { MOONSHOT_API_KEY: "test", KIMI_API_KEY: "test" }, { reason: "ready", modelIds: ["kimi-k2.7-code"] });
+  assert.equal(config.providers.moonshotai.models[moonshot.id].disabled, true);
+  assert.equal(config.providers.moonshotai.models["kimi-k2.7-code"].disabled, false);
+  assert.equal(status[0].modelCount, 1);
+  assert.equal(status[1].modelCount, 1);
+});
+
+test("missing, rejected or unavailable account catalog exposes no unauthorized Moonshot models", async () => {
+  let calls = 0;
+  assert.equal((await moonshotAccountCatalog({}, async () => { calls++; })).reason, "missing_key");
+  assert.equal(calls, 0);
+  for (const status of [401, 403, 500, 302]) {
+    const catalog = await moonshotAccountCatalog({ MOONSHOT_API_KEY: "test" }, async () => ({ status }));
+    const config = {};
+    const result = configureKimiProviders(config, [moonshot], { MOONSHOT_API_KEY: "test" }, catalog);
+    assert.equal(result[0].enabled, false);
+    assert.equal(config.providers.moonshotai.models[moonshot.id].disabled, true);
+  }
+  const bad = await moonshotAccountCatalog({ MOONSHOT_API_KEY: "secret" }, async () => { throw new Error("secret"); });
+  assert.equal(JSON.stringify(bad).includes("secret"), false);
+});
+
+test("authenticated catalog keeps only bounded model identifiers and never retains keys", async () => {
+  const catalog = await moonshotAccountCatalog({ MOONSHOT_API_KEY: " secret " }, async key => {
+    assert.equal(key, "secret");
+    return { status: 200, body: { data: [{ id: "kimi-k2.6" }, { id: "kimi-k2.6" }, { id: "invalid\nkey" }, { id: null }] } };
+  });
+  assert.deepEqual(catalog, { reason: "ready", modelIds: ["kimi-k2.6"] });
 });

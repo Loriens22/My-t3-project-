@@ -234,7 +234,10 @@ entitlements apply separately; no subscription or hosting upgrade is purchased.
 
 Current native catalogs include Kimi K3.1 Pro, its Highspeed variant, Kimi K3,
 Kimi K2.7 Code/HighSpeed and Kimi K2.6 for Moonshot. Code membership has its own
-six-model catalog and tier restrictions. Catalog refresh preserves the native
+six-model catalog and tier restrictions. Moonshot models are also intersected
+with the authenticated account's `/v1/models` response. An account with a smaller
+catalog sees that subset; rejected or unavailable discovery leaves Moonshot
+disabled and preserves the other providers. Catalog refresh preserves native
 capabilities and model limits; stale/unsupported entries stay disabled.
 
 Moonshot requests use OpenCode 2's bundled Moonshot chat adapter. Code models use

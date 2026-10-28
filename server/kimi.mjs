@@ -9,7 +9,7 @@ export function kimiDiscoveryProviders(environment = process.env) {
   return kimiProviders.filter(provider => environment[provider.key]?.trim()).map(provider => provider.id);
 }
 
-export function configureKimiProviders(config, nativeCatalog, environment = process.env) {
+export function configureKimiProviders(config, nativeCatalog, environment = process.env, moonshotAccount) {
   const managed = new Set(kimiProviders.map(provider => provider.id));
   const enabled = new Set((config.enabled_providers || ["opencode"]).filter(id => !managed.has(id)));
   config.providers ??= {};
@@ -18,7 +18,8 @@ export function configureKimiProviders(config, nativeCatalog, environment = proc
     const hasKey = Boolean(environment[provider.key]?.trim());
     const candidates = nativeCatalog.filter(model => model.providerID === provider.id);
     const available = candidates.filter(model => model.enabled !== false &&
-      model.status !== "deprecated" && model.capabilities?.tools && model.limit?.output > 0);
+      model.status !== "deprecated" && model.capabilities?.tools && model.limit?.output > 0 &&
+      (provider.id !== "moonshotai" || !moonshotAccount || moonshotAccount.modelIds.includes(model.id)));
     const ready = hasKey && available.length > 0;
     const allowed = new Set(ready ? available.map(model => model.id) : []);
     const providerConfig = config.providers[provider.id] ??= {};
@@ -43,7 +44,8 @@ export function configureKimiProviders(config, nativeCatalog, environment = proc
     );
     if (ready) enabled.add(provider.id);
     status.push({ provider: provider.id, name: provider.name, enabled: ready,
-      modelCount: allowed.size, reason: !hasKey ? "missing_key" : ready ? "ready" : "catalog_unavailable",
+      modelCount: allowed.size, reason: !hasKey ? "missing_key" : ready ? "ready" :
+        provider.id === "moonshotai" && moonshotAccount?.reason !== "ready" ? moonshotAccount?.reason || "catalog_unavailable" : "catalog_unavailable",
       keyVariable: provider.key });
   }
   config.enabled_providers = [...enabled];
