@@ -5,7 +5,7 @@ RUN apt-get update \
        ca-certificates curl git libatomic1 openssh-client python3 tini \
     && rm -rf /var/lib/apt/lists/*
 
-RUN npm install --prefix /opt/t3 --no-audit --no-fund t3@0.1.0 @opencode/cli@2.0.32 \
+RUN npm install --prefix /opt/t3 --no-audit --no-fund t3@0.1.0 @opencode/cli@2.2.5 \
     && npm cache clean --force
 
 ENV PATH="/opt/t3/node_modules/.bin:${PATH}" \
