@@ -66,3 +66,25 @@ twice; this small follow-up is pending the final CI run. Production migration,
 actual T3 lifecycle/concurrency/fork/rollback and real quota recovery still need
 verification after infrastructure access is restored. Source is a candidate,
 not a claim of production deployment.
+
+FINAL HANDOFF — 2026-11-04:
+- Prepared source3518e930 on codex/opencode-2.2.5; draftPR:
+  https://github.com/Loriens22/My-t3-project-/pull/1
+- Full runtime suite41860349049 passed83checks plus native provider tool loops,
+  fresh T3/native boot and actual compacted-transcript SDK read.
+- Final ordinary-event optimization passed20 focused assertions using the exact
+  candidate helper code in V8. Full follow-up41861747858 remains QUEUED; it has
+  not passed yet. Do not silently relabel that run successful.
+- Main remainsfc6753d. No production deployment/config/key mutation was made in
+  this request. Production version/backups remain unverified because Railway
+  still returns UNAUTHORIZED/requires reauthentication after the user's retry.
+  Shell executor rejects commands as unavailable despite environment status
+  showing running with an empty capabilities list.
+- User supplied fresh DeepSeekV4.1FlashFree error at2026-11-04T14:56:24.904Z:
+  provider.quota / Free usage limit reached. No reset time is present. A first
+  attempt in a new thread failed; no claim of real quota recovery is supported.
+- Next: restore normal infrastructure access; inspect actual version/logs/auth
+  mode, verify restorable native DB backups, deploy through the normal pipeline
+  and observeSUCCESS, then exercise actual T3 lifecycle/reconnect/fork/rollback
+  and a real provider request. If quota persists on latestclient, follow upstream
+  issue59387/account support. Preserve pairings/keys/history/fullaccess throughout.
