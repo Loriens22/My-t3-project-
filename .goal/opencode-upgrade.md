@@ -39,3 +39,9 @@ https://github.com/anomalyco/opencode/issues/59387
 https://github.com/pingdotgg/t3code/blob/v0.1.0/packages/provider-opencode/package.json
 https://github.com/anomalyco/opencode/blob/v2.0.28/packages/schema/src/session-message.ts
 https://github.com/anomalyco/opencode/blob/v2.2.5/packages/schema/src/session-message.ts
+
+Runtime evidence: qualification run41856065976 succeeded. 17 JS +57 Python checks,
+actual native discovery and both Moonshot/Code shell-tool loops passed with dummy
+keys and retained reasoning. Fresh T3 protocol2 and native2.2.5 boot passed at
+exact1e9-byte RAM/no swap. Compacted-transcript old-SDK gate is now prepared as
+an actual native-wire import/read test; it has not yet run. Main unchanged.
