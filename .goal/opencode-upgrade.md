@@ -56,3 +56,13 @@ untouched. T3 does not consume recent or roundtrip decoded native state; fork
 and rollback use native RPCs. All non-native, POST and quota responses bypass
 the adapter. It runs only in existing T3 Node process via its preload.
 This repair and its native-wire regression are pending CI, not yet deployed.
+
+Repair verified: CI41860349049 SUCCESS on baab472. 26JS+57Python checks,
+both native model tool loops, fresh shared-server boot and actual migrated
+compaction read with the exact old SDK passed; original native fields/context
+were preserved. Independent review found no concrete correctness/security blocker.
+Added an ordinary-event fast path to avoid parsing every reasoning/tool delta
+twice; this small follow-up is pending the final CI run. Production migration,
+actual T3 lifecycle/concurrency/fork/rollback and real quota recovery still need
+verification after infrastructure access is restored. Source is a candidate,
+not a claim of production deployment.

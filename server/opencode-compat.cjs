@@ -28,6 +28,8 @@ function adaptEvent(event) {
 }
 
 function adaptFrame(frame) {
+  // Native event-feed uses JSON.stringify; ordinary token/tool events need no second JSON parse.
+  if (!frame.includes('"session.compaction.started"') && !frame.includes('"session.compaction.ended"')) return frame;
   const lines = frame.split(/\r?\n/);
   const data = lines.filter(line => line.startsWith("data:"))
     .map(line => line.slice(5).replace(/^ /, "")).join("\n");

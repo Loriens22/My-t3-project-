@@ -3,6 +3,12 @@ on:
   push:
     branches:
       - codex/opencode-2.2.5
+    paths:
+      - Dockerfile
+      - "server/**"
+      - "!server/README.md"
+      - "ci/**"
+      - ".github/workflows/opencode-upgrade.yml"
   workflow_dispatch:
 permissions:
   contents: read
