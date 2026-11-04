@@ -1,5 +1,6 @@
 // Loaded only into the native Node server. Report numbers, never user content.
 if (require('node:path').basename(process.execPath) === 't3') {
+  require('./opencode-compat.cjs');
   const fs = require('node:fs');
   const v8 = require('node:v8');
   const vm = require('node:vm');

@@ -1,5 +1,7 @@
 // Real native wire check using the exact SDK bundled in T3 0.1.0.
 import assert from "node:assert/strict";
+import http from "node:http";
+import compat from "/app/server/opencode-compat.cjs";
 import { randomBytes } from "node:crypto";
 import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -20,20 +22,29 @@ const ownedSessions = new Set();
 let stage = "initialization";
 
 async function request(method, path, body) {
-  const response = await fetch(new URL(path, baseUrl), {
-    method,
-    headers: { authorization, ...(body === undefined ? {} : { "content-type": "application/json" }) },
-    body: body === undefined ? undefined : JSON.stringify(body),
-    signal: AbortSignal.timeout(15000),
-    redirect: "error",
+  const encoded = body === undefined ? undefined : JSON.stringify(body);
+  return new Promise((resolve, reject) => {
+    const outgoing = http.request(new URL(path, baseUrl), {
+      method, headers: { authorization, ...(encoded === undefined ? {} :
+        { "content-type": "application/json", "content-length": Buffer.byteLength(encoded) }) },
+    }, response => {
+      if (response.statusCode < 200 || response.statusCode >= 300) {
+        response.resume();
+        reject(Object.assign(new Error("Owned native API request failed"), { status: response.statusCode }));
+        return;
+      }
+      let text = "";
+      response.setEncoding("utf8");
+      response.on("data", chunk => { text += chunk; });
+      response.on("error", reject);
+      response.on("end", () => {
+        try { resolve(text ? JSON.parse(text) : undefined); } catch (error) { reject(error); }
+      });
+    });
+    outgoing.setTimeout(15000, () => outgoing.destroy(new Error("Owned native request deadline")));
+    outgoing.on("error", reject);
+    outgoing.end(encoded);
   });
-  if (!response.ok) {
-    const error = new Error("Owned native API request failed");
-    error.status = response.status;
-    throw error;
-  }
-  const text = await response.text();
-  return text ? JSON.parse(text) : undefined;
 }
 
 async function oldClientMessages(id) {
@@ -91,7 +102,13 @@ async function main() {
     assert(contextPreserved, "Native conversion lost retained context");
 
     stage = "old-schema-current-wire";
-    const decoded = Schema.decodeUnknownResult(SessionMessage.Info)(actual);
+    const rawWireAccepted = Result.isSuccess(Schema.decodeUnknownResult(SessionMessage.Info)(actual));
+    assert.equal(rawWireAccepted, false, "Unadapted native control no longer exercises the old-SDK mismatch");
+    const view = compat.adaptMessage(actual);
+    const { recent: restoredRecent, ...unaltered } = view;
+    assert.deepEqual(unaltered, actual, "Compatibility view changed canonical native fields");
+    assert.equal(restoredRecent, legacyMessage.recent);
+    const decoded = Schema.decodeUnknownResult(SessionMessage.Info)(view);
     const schemaAccepted = Result.isSuccess(decoded);
     const schemaFailureMentionsRecent = !schemaAccepted && /recent/i.test(String(decoded.failure));
     stage = "old-client-current-wire";
@@ -110,7 +127,8 @@ async function main() {
       legacySchemaControl: "passed", oldClientControl: "passed",
       controlMessageCount: controlPage.data.length, retainedContextPreserved: contextPreserved,
       actualWireHasLegacyRecent: Object.hasOwn(actual, "recent"),
-      oldSchemaAcceptsActualWire: schemaAccepted, oldSchemaFailureMentionsRecent: schemaFailureMentionsRecent,
+      rawNativeAcceptedByOldSchema: rawWireAccepted, compatibilityViewPreservesNativeFields: true,
+      oldSchemaAcceptsCompatibilityView: schemaAccepted, oldSchemaFailureMentionsRecent: schemaFailureMentionsRecent,
       oldClientAcceptsActualWire: httpAccepted, oldClientFailureMentionsRecent: httpFailureMentionsRecent,
       releaseGate: compatible ? "passed" : "blocked",
     }));

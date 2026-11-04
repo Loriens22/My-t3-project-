@@ -19,7 +19,7 @@ jobs:
         run: docker build -t t3-upgrade-check .
       - name: Run configuration, resource and archive checks
         run: |
-          docker run --rm --memory=1000000000 --memory-swap=1000000000 --cpus=1 --entrypoint bash t3-upgrade-check -c 'node --test /app/server/kimi.test.mjs /app/server/runtime-health.test.mjs /app/server/browser-resources.test.mjs && cd /app/server && PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -p "*_test.py"'
+          docker run --rm --memory=1000000000 --memory-swap=1000000000 --cpus=1 --entrypoint bash t3-upgrade-check -c 'node --test /app/server/opencode-compat.test.cjs /app/server/kimi.test.mjs /app/server/runtime-health.test.mjs /app/server/browser-resources.test.mjs && cd /app/server && PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -p "*_test.py"'
       - name: Exercise native discovery and tool loops using local fixtures
         run: |
           docker run --rm --memory=1000000000 --memory-swap=1000000000 --cpus=1 -v "$PWD/ci:/checks:ro" --entrypoint python3 t3-upgrade-check /checks/opencode-smoke.py
@@ -47,7 +47,7 @@ jobs:
           cp ci/compaction-contract.mjs "$RUNNER_TEMP/opencode-contract/contract.mjs"
           docker exec t3-upgrade-runtime mkdir -p /tmp/opencode-contract
           docker cp "$RUNNER_TEMP/opencode-contract/." t3-upgrade-runtime:/tmp/opencode-contract/
-          docker exec t3-upgrade-runtime node --max-old-space-size=128 /tmp/opencode-contract/contract.mjs
+          docker exec t3-upgrade-runtime node --require /app/server/opencode-compat.cjs --max-old-space-size=128 /tmp/opencode-contract/contract.mjs
       - name: Show bounded runtime diagnostics
         if: failure()
         run: |

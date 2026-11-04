@@ -45,3 +45,14 @@ actual native discovery and both Moonshot/Code shell-tool loops passed with dumm
 keys and retained reasoning. Fresh T3 protocol2 and native2.2.5 boot passed at
 exact1e9-byte RAM/no swap. Compacted-transcript old-SDK gate is now prepared as
 an actual native-wire import/read test; it has not yet run. Main unchanged.
+
+Compaction proof: run41857360080 reproduced actual native2.2.5 wire rejection by
+T3's exact SDK2.0.28 (valid legacy and empty-session controls passed). Native
+retained context remains in metadata.recent, but old decoder requires recent.
+A narrow T3 fetch compatibility view is prepared: GET native message pages copy
+legacy metadata.recent (or old-valid empty text) and compaction start/end SSE
+carry the obsolete field. Native DBs/model inputs/native replay metadata are
+untouched. T3 does not consume recent or roundtrip decoded native state; fork
+and rollback use native RPCs. All non-native, POST and quota responses bypass
+the adapter. It runs only in existing T3 Node process via its preload.
+This repair and its native-wire regression are pending CI, not yet deployed.
