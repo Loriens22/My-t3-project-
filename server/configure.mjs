@@ -6,6 +6,8 @@ import { nvidiaConfiguration } from "./nvidia.mjs";
 import { configureKimiProviders, kimiDiscoveryProviders } from "./kimi.mjs";
 import { configureInferenceRoutes } from "./inference-routing.mjs";
 import { moonshotAccountCatalog } from "./moonshot-catalog.mjs";
+import { recurringFreeDiscoveryProviders, configureRecurringFreeProviders, openRouterFreeCatalog } from "./free-providers.mjs";
+import { modelscopeDiscoveryProviders, modelScopeCatalog, configureModelScope } from "./modelscope.mjs";
 
 const root = process.env.T3_PHONE_ROOT || "/data";
 const selection = { instanceId: "opencode", model: "opencode/deepseek-v4.1-flash-free" };
@@ -27,9 +29,14 @@ let catalogModels = [];
 const catalogFile = path.join(root, "model-catalog-public.json");
 try { catalogModels = JSON.parse(fs.readFileSync(catalogFile, "utf8")); } catch {}
 const discoveryFile = path.join(root, "catalog-discovery.json");
-fs.writeFileSync(discoveryFile, JSON.stringify({ enabled_providers: [
+const modelScope = await modelScopeCatalog();
+const discoveryConfig = { enabled_providers: [
   "opencode", ...(process.env.NVIDIA_API_KEY?.trim() ? ["nvidia"] : []), ...kimiDiscoveryProviders(),
-] }), { mode: 0o600 });
+  ...recurringFreeDiscoveryProviders(), ...modelscopeDiscoveryProviders(),
+] };
+// Latest ModelScope models need explicit native V2 definitions before discovery.
+configureModelScope(discoveryConfig, [], process.env, modelScope);
+fs.writeFileSync(discoveryFile, JSON.stringify(discoveryConfig), { mode: 0o600 });
 try {
   const output = execFileSync(process.env.OPENCODE_BINARY || "/opt/t3/node_modules/.bin/opencode", ["api", "--standalone", "model.list"], {
     env: { ...process.env, OPENCODE_CONFIG: discoveryFile },
@@ -89,6 +96,8 @@ config.providers.nvidia.models = Object.fromEntries(
   ])].map((id) => [id, { disabled: !nvidia.provider.whitelist.includes(id) }]),
 );
 const kimiStatus = configureKimiProviders(config, catalogModels, process.env, await moonshotAccountCatalog());
+const recurringFreeStatus = configureRecurringFreeProviders(config, catalogModels, process.env, await openRouterFreeCatalog());
+const modelScopeStatus = configureModelScope(config, catalogModels, process.env, modelScope);
 // Every configured provider shares the same inference queue. Native Kimi
 // adapters keep their protocol, reasoning settings, credentials and identity.
 const routes = configureInferenceRoutes(config, catalogModels);
@@ -104,7 +113,7 @@ if (JSON.stringify(previous) !== JSON.stringify(freeModels)) {
 fs.writeFileSync(configFile, JSON.stringify(config, null, 2) + "\n", { mode: 0o600 });
 console.log(`OpenCode catalog: ${freeModels.length} models with zero input/output/cache prices.`);
 console.log(`NVIDIA NIM: ${nvidia.enabled ? "enabled" : "waiting for NVIDIA_API_KEY"}; ${nvidia.provider.whitelist.length} compatible coding models configured.`);
-for (const provider of kimiStatus) {
+for (const provider of [...kimiStatus, ...recurringFreeStatus, modelScopeStatus]) {
   console.log(`${provider.name}: ${provider.enabled ? "enabled" : provider.reason === "missing_key" ? `waiting for ${provider.keyVariable}` : provider.reason.replaceAll("_", " ")}; ${provider.modelCount} compatible coding models configured.`);
 }
 writeNew("t3/userdata/settings.json", {

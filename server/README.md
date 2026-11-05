@@ -371,3 +371,81 @@ The local inference queue forwards upstream status/errors and has no free-usage
 counter. Capture the model, exact error, UTC time, actual installed version and
 Console authentication state when diagnosing a persistent block. Account quota
 investigations are handled by help@anoma.ly.
+
+
+## Recurring free providers (verified 2026-11-05)
+
+Groq works through OpenCode 2's native Groq adapter. Set `GROQ_API_KEY` in
+Railway's `t3-code` service, using a key from a **Free-plan workspace** at
+https://console.groq.com/keys. The integration offers current, tool-capable native
+`qwen/qwen3.8-27b`, `openai/gpt-oss-20b` and `openai/gpt-oss-120b` models.
+Native pricing and model identities are preserved: these models also have paid
+plan prices, so a key from a paid Groq workspace is subject to that workspace's
+billing. This setup does not upgrade a plan or purchase credits.
+
+Groq's published Free Plan currently allows these models 30 requests/minute,
+1,000 requests/day, 8,000 tokens/minute and 200,000 tokens/day. All applicable
+limits apply, and the account console is authoritative. A coding-agent turn
+can make many requests, and its tools/history count toward token limits.
+Large threads may exceed the free token allowance even with few messages.
+Sources: https://console.groq.com/docs/rate-limits and
+https://console.groq.com/docs/coding-with-groq/opencode.
+
+An optional `OPENROUTER_API_KEY` enables only explicit `:free` tool models whose
+current public catalog reports zero prices in **every** price dimension.
+The list is intersected with the native OpenCode catalog; paid twins, paid
+fallbacks and automatic model routing are excluded. Missing credentials or
+unavailable/currently paid catalog entries leave those models disabled.
+OpenRouter's no-purchase allowance is 50 free-variant requests/day total and
+20/minute. The higher 1,000/day allowance requires a prior credit purchase;
+it is not advertised here as a no-purchase free plan. Create a key at
+https://openrouter.ai/settings/keys. Source:
+https://openrouter.ai/collections/free-models.
+
+Both providers share the existing one-stream queue and persistent archive.
+No credentials are embedded in source or public catalogs. Adding a provider
+preserves existing thread choices and full-access permissions.
+
+## NVIDIA latency diagnostics
+
+NVIDIA's public catalog responding quickly does not establish usable model
+latency. On 2026-11-05, the same existing key and host completed a direct
+Nemotron 3.5 Lightning reply in about 1.45 seconds, while DeepSeek V4.1 Flash
+returned no HTTP response headers within 120 seconds. The complete Nemotron
+shell-tool task through T3 completed in about 11 seconds, produced and verified
+a real proof file, and required no approval prompts. This narrows the problem
+to particular model endpoints/settings/serving capacity; it does not establish
+a global NVIDIA outage or a specific internal cause.
+
+OpenCode 2.2.5 can retry general provider failures up to ten times. The queue
+therefore bounds NVIDIA's first HTTP response and marks **its own** NVIDIA
+transport failures nonretryable with `x-should-retry: false`. Genuine upstream
+statuses, rate-limit headers, error bodies and successful streams are forwarded
+unchanged. This prevents a silent endpoint from repeatedly blocking other
+conversations; it does not speed up NVIDIA's backend or silently select another
+model. Active, streaming replies retain the existing idle timeout.
+
+ModelScope is a conditional option for the exact
+`deepseek-ai/DeepSeek-V4.1-Flash-1017`, earlier Flash, and current Qwen models.
+`MODELSCOPE_API_KEY` enables only reviewed IDs still present in its public API
+catalog. Native V2 definitions seed discovery because the built-in ModelScope
+catalog can lag the hosted service. The adapter preserves `reasoning_content`
+across DeepSeek tool calls. The configured context/output caps are operator
+limits, not proof of an account's hosted quota.
+
+ModelScope's current free allowance uses daily Magicubes: 200 for daily login
+and 50 for a linked Alibaba Cloud account; Flash1017 currently costs two per
+call (up to approximately 125 calls if all 250 are earned and spent on it).
+It requires verified email and a linked real-name-verified Alibaba Cloud
+account. Availability to a Bulgarian account has not been confirmed; this is
+an optional preparation, not a promise of effortless sign-up or live access.
+No real ModelScope key or authenticated inference was used in qualification.
+Key page: https://modelscope.cn/my/myaccesstoken. Official references:
+https://modelscope.cn/docs/model-service/API-Inference/intro,
+https://modelscope.cn/docs/model-service/API-Inference/limits,
+https://modelscope.cn/docs/magicube/intro, and
+https://modelscope.cn/models/deepseek-ai/DeepSeek-V4.1-Flash-1017.
+
+Tencent Hy4 is present in current paid API catalogs, but no comparable,
+reputable recurring-free API offer was verified. App-only and short launch
+promotions are not presented as permanent API quotas.

@@ -51,6 +51,8 @@ def native_tool_loop(base, provider, model, key_variable):
     marker = "NATIVE_UPGRADE_TOOL_VERIFIED"
     fake_key = "ci-dummy-" + provider
     reasoning = "I will verify the fixture using the shell tool."
+    requires_reasoning = provider in ("moonshotai", "kimi-code-plan-global", "modelscope")
+    reasoning_field = "reasoning_content" if requires_reasoning else "reasoning"
     code = ("import json,pathlib; p=pathlib.Path('upgrade-proof.json'); "
         "p.write_text(json.dumps({'verified':True,'answer':42})); "
         "assert json.loads(p.read_text())=={'verified':True,'answer':42}; "
@@ -58,7 +60,8 @@ def native_tool_loop(base, provider, model, key_variable):
     command = "python3 -c " + shlex.quote(code)
     observed = {"requests": 0, "nativeIdentity": True, "correctKey": True,
         "reasoningPreserved": False, "toolResultPreserved": False,
-        "thinkingEnabled": True, "toolSchemaSupported": True}
+        "thinkingEnabled": True, "toolSchemaSupported": True, "groqOptionsValid": True,
+        "modelIdentity": True}
 
     class Handler(http.server.BaseHTTPRequestHandler):
         def log_message(self, *arguments):
@@ -70,11 +73,15 @@ def native_tool_loop(base, provider, model, key_variable):
             observed["correctKey"] &= self.headers.get("Authorization") == "Bearer " + fake_key
             user_agent = self.headers.get("User-Agent", "")
             observed["nativeIdentity"] &= "opencode" in user_agent.lower() and VERSION in user_agent
-            observed["thinkingEnabled"] &= payload.get("thinking", {}).get("type") == "enabled"
+            if provider in ("moonshotai", "kimi-code-plan-global"):
+                observed["thinkingEnabled"] &= payload.get("thinking", {}).get("type") == "enabled"
+            if provider == "groq":
+                observed["groqOptionsValid"] &= payload.get("reasoning_format") == "parsed" and "thinking" not in payload
+            observed["modelIdentity"] &= payload.get("model") == model
             messages = payload.get("messages", [])
             if any(m.get("role") == "tool" for m in messages):
                 observed["reasoningPreserved"] = any(m.get("role") == "assistant" and
-                    reasoning in str(m.get("reasoning_content", "")) for m in messages)
+                    reasoning in str(m.get(reasoning_field, "")) for m in messages)
                 observed["toolResultPreserved"] = any(m.get("role") == "tool" and
                     marker in str(m.get("content", "")) for m in messages)
                 delta = {"role": "assistant", "content": marker}
@@ -92,7 +99,7 @@ def native_tool_loop(base, provider, model, key_variable):
                     arguments["workdir"] = str(work)
                 if "timeout" in properties:
                     arguments["timeout"] = 30000
-                delta = {"role": "assistant", "reasoning_content": reasoning,
+                delta = {"role": "assistant", reasoning_field: reasoning,
                     "tool_calls": [{"index": 0, "id": "call_upgrade_fixture", "type": "function",
                         "function": {"name": tool["name"], "arguments": json.dumps(arguments)}}]}
                 finish = "tool_calls"
@@ -112,18 +119,30 @@ def native_tool_loop(base, provider, model, key_variable):
     server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Handler)
     threading.Thread(target=server.serve_forever, daemon=True).start()
     entry = {"disabled": False, "settings": {
-        "baseURL": f"http://127.0.0.1:{server.server_port}/v1", "thinking": {"type": "enabled"}}}
+        "baseURL": f"http://127.0.0.1:{server.server_port}/v1"}}
+    if provider in ("moonshotai", "kimi-code-plan-global"):
+        entry["settings"]["thinking"] = {"type": "enabled"}
     if provider == "kimi-code-plan-global":
         entry["package"] = "@opencode/ai/providers/moonshot/chat"
     config = {"enabled_providers": [provider], "model": provider + "/" + model,
         "small_model": provider + "/" + model, "permission": "allow",
         "providers": {provider: {"models": {model: entry}}}}
+    if provider == "modelscope":
+        seed = subprocess.check_output(["node", "--input-type=module", "-e",
+            "import {configureModelScope} from '/app/server/modelscope.mjs'; const c={}; "
+            "configureModelScope(c,[],{MODELSCOPE_API_KEY:'ci-dummy-modelscope'},"
+            "{reason:'ready',modelIds:['deepseek-ai/DeepSeek-V4.1-Flash-1017']});"
+            "process.stdout.write(JSON.stringify(c));"], text=True)
+        config = json.loads(seed)
+        config.update(model=provider + "/" + model, small_model=provider + "/" + model, permission="allow")
+        config["providers"][provider]["settings"]["baseURL"] = entry["settings"]["baseURL"]
+        config["providers"][provider]["models"][model]["settings"]["baseURL"] = entry["settings"]["baseURL"]
     (root / "opencode.json").write_text(json.dumps(config))
     environment = isolated_environment(root)
     environment[key_variable] = fake_key
     try:
         output = run(["run", "--standalone", "--auto", "--model", provider + "/" + model,
-            "--title", "Isolated upgrade check", "--format", "json",
+            "--title", "Isolated upgrade check", "--thinking", "--format", "json",
             "Use one shell command to write and verify upgrade-proof.json, then reply exactly " +
             marker + ". Do not install dependencies or delegate."], environment, work, timeout=150)
         assert json.loads((work / "upgrade-proof.json").read_text()) == {"verified": True, "answer": 42}
@@ -138,7 +157,11 @@ def native_tool_loop(base, provider, model, key_variable):
         assert any(e.get("part", {}).get("type") == "tool" and
             e["part"].get("state", {}).get("status") == "completed" for e in events)
         assert observed["requests"] >= 2
-        assert all(value for name, value in observed.items() if name != "requests"), observed
+        assert all(value for name, value in observed.items() if name not in ("requests", "reasoningPreserved")), observed
+        if requires_reasoning:
+            assert observed["reasoningPreserved"], observed
+        else:
+            assert any(e.get("type") == "reasoning" and reasoning in str(e.get("part", {}).get("text", "")) for e in events), "Native reasoning stream was not decoded"
         print(json.dumps({"provider": provider, "nativeToolLoop": "passed", **observed}), flush=True)
     finally:
         server.shutdown()
@@ -158,3 +181,8 @@ with tempfile.TemporaryDirectory(prefix="opencode-upgrade-") as temporary:
         "modelCount": len(models)}), flush=True)
     native_tool_loop(base, "moonshotai", "kimi-k3.1-pro", "MOONSHOT_API_KEY")
     native_tool_loop(base, "kimi-code-plan-global", "k3.1-pro", "KIMI_API_KEY")
+
+    native_tool_loop(base, "groq", "qwen/qwen3.8-27b", "GROQ_API_KEY")
+    native_tool_loop(base, "openrouter", "nvidia/nemotron-3.5-lightning:free", "OPENROUTER_API_KEY")
+
+    native_tool_loop(base, "modelscope", "deepseek-ai/DeepSeek-V4.1-Flash-1017", "MODELSCOPE_API_KEY")
