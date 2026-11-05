@@ -39,7 +39,7 @@ test("no key skips discovery, and redirects/errors/empty catalogs fail closed", 
 
 test("discovery seeds documented V2 definitions before native model.list without embedding secrets", () => {
   const config = { enabled_providers: ["opencode", "nvidia"] };
-  const status = configureModelScope(config, [], environment, live);
+  const status = configureModelScope(config, [], environment, live, { seedDiscovery: true });
   assert.equal(status.modelCount, 2);
   assert.deepEqual(config.enabled_providers, ["opencode", "nvidia", "modelscope"]);
   assert.equal(config.providers.modelscope.settings.baseURL, "https://api-inference.modelscope.cn/v1");
@@ -90,4 +90,18 @@ test("legacy and externally routed selectors stay disabled and stale queue endpo
   assert.equal(config.providers.modelscope.models[paid].disabled, true);
   assert.equal(config.providers.modelscope.models[flash].settings.baseURL, undefined);
   assert.equal(config.providers.modelscope.models[flash].settings.custom, "retained");
+});
+
+
+test("an empty final native catalog never enables a direct, unqueued ModelScope route", () => {
+  const config = { enabled_providers: ["nvidia", "modelscope"], providers: { modelscope: {
+    settings: { baseURL: "https://api-inference.modelscope.cn/v1" },
+    models: { [flash]: { disabled: false } },
+  } } };
+  const status = configureModelScope(config, [], environment, live);
+  assert.equal(status.enabled, false);
+  assert.equal(status.modelCount, 0);
+  assert.equal(config.enabled_providers.includes("modelscope"), false);
+  assert.equal(config.providers.modelscope.models[flash].disabled, true);
+  assert.deepEqual(config.enabled_providers, ["nvidia"]);
 });

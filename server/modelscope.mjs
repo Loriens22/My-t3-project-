@@ -76,18 +76,18 @@ export async function modelScopeCatalog(environment = process.env, fetchModels =
   }
 }
 
-// Seed a discovery document with nativeCatalog=[] before model.list. Its
+// Explicitly seed a discovery document before model.list. An empty runtime
+// catalog must never be mistaken for permission to bypass the shared queue. Its
 // native output then validates these exact definitions and supplies metadata
 // for the existing shared inference queue. Call again with that output when
 // writing the final runtime config; missing/non-tool native entries are denied.
-export function configureModelScope(config, nativeCatalog = [], environment = process.env, catalog) {
+export function configureModelScope(config, nativeCatalog = [], environment = process.env, catalog, { seedDiscovery = false } = {}) {
   const enabled = new Set((config.enabled_providers || ["opencode"]).filter(id => id !== providerID));
   const keyAvailable = hasKey(environment);
   const publicIds = new Set(catalog?.reason === "ready" && Array.isArray(catalog.modelIds)
     ? catalog.modelIds.filter(id => Object.hasOwn(definitions, id)) : []);
   const native = nativeCatalog.filter(model => model.providerID === providerID);
-  const discovery = nativeCatalog.length === 0;
-  const allowed = new Set(keyAvailable ? [...publicIds].filter(id => discovery || native.some(model =>
+  const allowed = new Set(keyAvailable ? [...publicIds].filter(id => seedDiscovery || native.some(model =>
     model.id === id && model.enabled !== false && model.status !== "deprecated" &&
     model.capabilities?.tools && model.limit?.output > 0)) : []);
   config.providers ??= {};
@@ -109,7 +109,7 @@ export function configureModelScope(config, nativeCatalog = [], environment = pr
         type: "chat",
         modelID: id,
         package: packageName,
-        capabilities: { tools: true, input: ["text", "image"], output: ["text"], temperature: true,
+        capabilities: { tools: true, input: ["text"], output: ["text"], temperature: true,
           reasoning: { supported: true } },
         compatibility: { reasoningField: "reasoning_content", maxTokensField: "max_tokens",
           ...(definition.deepseek ? { requireReasoning: true } : {}) },

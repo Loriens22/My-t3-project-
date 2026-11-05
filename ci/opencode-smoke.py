@@ -44,7 +44,7 @@ def isolated_environment(root):
 
 
 def native_tool_loop(base, provider, model, key_variable):
-    root = base / provider
+    root = base / (provider + "-" + re.sub(r"[^A-Za-z0-9_-]", "_", model))
     root.mkdir()
     work = root / "project"
     work.mkdir()
@@ -62,6 +62,11 @@ def native_tool_loop(base, provider, model, key_variable):
         "reasoningPreserved": False, "toolResultPreserved": False,
         "thinkingEnabled": True, "toolSchemaSupported": True, "groqOptionsValid": True,
         "modelIdentity": True}
+    owner_rule = "CI_OWNER_INSTRUCTIONS_PRESERVE_EXACTLY: Never change the owner's draft."
+    (work / "AGENTS.md").write_text(owner_rule + "\n")
+    if provider == "groq":
+        observed.update(compactStockPrompt=True, ownerInstructionsPreserved=True,
+            compactShellDocumentation=True)
 
     class Handler(http.server.BaseHTTPRequestHandler):
         def log_message(self, *arguments):
@@ -76,9 +81,18 @@ def native_tool_loop(base, provider, model, key_variable):
             if provider in ("moonshotai", "kimi-code-plan-global"):
                 observed["thinkingEnabled"] &= payload.get("thinking", {}).get("type") == "enabled"
             if provider == "groq":
-                observed["groqOptionsValid"] &= payload.get("reasoning_format") == "parsed" and "thinking" not in payload
+                groq_format_valid = ("reasoning_format" not in payload if model.startswith("openai/gpt-oss-")
+                    else payload.get("reasoning_format") == "parsed")
+                observed["groqOptionsValid"] &= groq_format_valid and "thinking" not in payload
             observed["modelIdentity"] &= payload.get("model") == model
             messages = payload.get("messages", [])
+            if provider == "groq":
+                system = "\n".join(str(m.get("content", "")) for m in messages if m.get("role") == "system")
+                observed["compactStockPrompt"] &= "You are OpenCode's coding agent: finish the user's task." in system
+                observed["ownerInstructionsPreserved"] &= owner_rule in system
+                shell = next((t.get("function", {}) for t in payload.get("tools", [])
+                    if t.get("function", {}).get("name") == "shell"), {})
+                observed["compactShellDocumentation"] &= shell.get("description", "").startswith("Run a shell command")
             if any(m.get("role") == "tool" for m in messages):
                 observed["reasoningPreserved"] = any(m.get("role") == "assistant" and
                     reasoning in str(m.get(reasoning_field, "")) for m in messages)
@@ -127,11 +141,13 @@ def native_tool_loop(base, provider, model, key_variable):
     config = {"enabled_providers": [provider], "model": provider + "/" + model,
         "small_model": provider + "/" + model, "permission": "allow",
         "providers": {provider: {"models": {model: entry}}}}
+    if provider == "groq":
+        config["plugins"] = ["/app/server/plugins/groq-context"]
     if provider == "modelscope":
         seed = subprocess.check_output(["node", "--input-type=module", "-e",
             "import {configureModelScope} from '/app/server/modelscope.mjs'; const c={}; "
             "configureModelScope(c,[],{MODELSCOPE_API_KEY:'ci-dummy-modelscope'},"
-            "{reason:'ready',modelIds:['deepseek-ai/DeepSeek-V4.1-Flash-1017']});"
+            "{reason:'ready',modelIds:['deepseek-ai/DeepSeek-V4.1-Flash-1017']},{seedDiscovery:true});"
             "process.stdout.write(JSON.stringify(c));"], text=True)
         config = json.loads(seed)
         config.update(model=provider + "/" + model, small_model=provider + "/" + model, permission="allow")
@@ -183,6 +199,7 @@ with tempfile.TemporaryDirectory(prefix="opencode-upgrade-") as temporary:
     native_tool_loop(base, "kimi-code-plan-global", "k3.1-pro", "KIMI_API_KEY")
 
     native_tool_loop(base, "groq", "qwen/qwen3.8-27b", "GROQ_API_KEY")
+    native_tool_loop(base, "groq", "openai/gpt-oss-20b", "GROQ_API_KEY")
     native_tool_loop(base, "openrouter", "nvidia/nemotron-3.5-lightning:free", "OPENROUTER_API_KEY")
 
     native_tool_loop(base, "modelscope", "deepseek-ai/DeepSeek-V4.1-Flash-1017", "MODELSCOPE_API_KEY")
