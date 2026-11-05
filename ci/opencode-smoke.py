@@ -81,7 +81,9 @@ def native_tool_loop(base, provider, model, key_variable):
             if provider in ("moonshotai", "kimi-code-plan-global"):
                 observed["thinkingEnabled"] &= payload.get("thinking", {}).get("type") == "enabled"
             if provider == "groq":
-                observed["groqOptionsValid"] &= payload.get("reasoning_format") == "parsed" and "thinking" not in payload
+                groq_format_valid = ("reasoning_format" not in payload if model.startswith("openai/gpt-oss-")
+                    else payload.get("reasoning_format") == "parsed")
+                observed["groqOptionsValid"] &= groq_format_valid and "thinking" not in payload
             observed["modelIdentity"] &= payload.get("model") == model
             messages = payload.get("messages", [])
             if provider == "groq":
