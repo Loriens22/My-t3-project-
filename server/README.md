@@ -1,7 +1,7 @@
 # Hosted T3 Code
 
 This Docker deployment is prepared for Railway. It runs the same verified T3 Code
-0.1.0 and OpenCode 2.0.32, compatible with the Android 2.0 app and orchestration
+0.1.0 and OpenCode 2.2.5, compatible with the Android 2.0 app and orchestration
 protocol 2. The older 0.0.45 server rejects that app with “Client not supported”.
 Versions are pinned together; a working HTML page alone does not verify mobile
 compatibility. Check `/.well-known/t3/environment` and authenticated WebSocket
@@ -340,3 +340,34 @@ The actual Railway deployment was verified through public HTTPS authentication,
 public WSS, and a completed free DeepSeek conversation. Data was verified to
 survive a container restart. The owner's Android pairing is the final client
 step; do not put the phone's pairing code in this repository.
+
+## OpenCode 2.2.5 compatibility and quota diagnostics
+
+T3 0.1.0 bundles the older OpenCode 2.0.28 client. Native 2.2.5 compaction
+messages no longer contain the required old recent field; a runtime regression
+reproduced old-client rejection of an actual imported compacted transcript.
+The T3-only Node preload now restores that obsolete field on native message
+reads and compaction start/end notifications. Migrated retained context is
+copied from metadata.recent; otherwise the old valid empty value is used.
+Native summaries, identifiers, replay data, databases and requests are unchanged.
+T3 forks and rollbacks use native operations, rather than importing this display
+view back into model context. All native inference credentials and attribution
+headers remain produced by OpenCode itself.
+
+The qualification workflow uses local model fixtures with dummy keys, actual
+shell-tool execution, native transcript import/read, and an exact
+1,000,000,000-byte memory limit with swap disabled. It does not establish that
+a real account's free allowance has recovered. Before production deployment,
+verify a restorable backup of existing native databases, because 2.2.5 applies
+database migrations; exercise actual T3 history, compaction and reconnect after
+the rollout. An old binary alone is not a database rollback.
+
+Free-model quotas are enforced by OpenCode Console. Its current
+[FAQ](https://opencode.ai/console/go) distinguishes daily free-model requests
+from Go's five-hour, weekly and monthly allowances. Persistent provider.quota
+failures also appear in the upstream
+[free-tier incident collection](https://github.com/anomalyco/opencode/issues/59387).
+The local inference queue forwards upstream status/errors and has no free-usage
+counter. Capture the model, exact error, UTC time, actual installed version and
+Console authentication state when diagnosing a persistent block. Account quota
+investigations are handled by help@anoma.ly.

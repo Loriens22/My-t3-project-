@@ -1,0 +1,64 @@
+name: Qualify OpenCode upgrade
+on:
+  push:
+    branches:
+      - codex/opencode-2.2.5
+    paths:
+      - Dockerfile
+      - "server/**"
+      - "!server/README.md"
+      - "ci/**"
+      - ".github/workflows/opencode-upgrade.yml"
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: qualify-opencode-upgrade
+  cancel-in-progress: true
+jobs:
+  regression:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build pinned runtime
+        run: docker build -t t3-upgrade-check .
+      - name: Run configuration, resource and archive checks
+        run: |
+          docker run --rm --memory=1000000000 --memory-swap=1000000000 --cpus=1 --entrypoint bash t3-upgrade-check -c 'node --test /app/server/opencode-compat.test.cjs /app/server/kimi.test.mjs /app/server/runtime-health.test.mjs /app/server/browser-resources.test.mjs && cd /app/server && PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -p "*_test.py"'
+      - name: Exercise native discovery and tool loops using local fixtures
+        run: |
+          docker run --rm --memory=1000000000 --memory-swap=1000000000 --cpus=1 -v "$PWD/ci:/checks:ro" --entrypoint python3 t3-upgrade-check /checks/opencode-smoke.py
+      - name: Start fresh T3 with the shared OpenCode server
+        run: |
+          docker run -d --name t3-upgrade-runtime --memory=1000000000 --memory-swap=1000000000 --cpus=1 -p 127.0.0.1:3773:3773 t3-upgrade-check
+          python3 - <<'PY'
+          import json,time,urllib.request
+          for attempt in range(120):
+              try:
+                  with urllib.request.urlopen("http://127.0.0.1:3773/.well-known/t3/environment",timeout=3) as response:
+                      data=json.load(response)
+                  assert data["orchestrationProtocolVersion"]==2
+                  print("Fresh T3 protocol 2 responds")
+                  break
+              except (OSError,ValueError,AssertionError):
+                  time.sleep(2)
+          else:
+              raise SystemExit("Fresh runtime failed to become ready")
+          PY
+          docker exec t3-upgrade-runtime python3 -c 'import json,pathlib,base64,urllib.request; key=pathlib.Path("/data/opencode-server-password").read_text().strip(); req=urllib.request.Request("http://127.0.0.1:4096/api/info",headers={"Authorization":"Basic "+base64.b64encode(("opencode:"+key).encode()).decode()}); data=json.load(urllib.request.urlopen(req,timeout=10)); assert data["version"]=="2.2.5"; print("Shared native OpenCode 2.2.5 responds")'
+      - name: Verify T3's old SDK can read migrated compactions
+        run: |
+          npm install --prefix "$RUNNER_TEMP/opencode-contract" --ignore-scripts --no-audit --no-fund @opencode/client@2.0.28 @opencode/schema@2.0.28 @opencode/protocol@2.0.28 effect@4.0.1
+          cp ci/compaction-contract.mjs "$RUNNER_TEMP/opencode-contract/contract.mjs"
+          docker exec t3-upgrade-runtime mkdir -p /tmp/opencode-contract
+          docker cp "$RUNNER_TEMP/opencode-contract/." t3-upgrade-runtime:/tmp/opencode-contract/
+          docker exec t3-upgrade-runtime node --require /app/server/opencode-compat.cjs --max-old-space-size=128 /tmp/opencode-contract/contract.mjs
+      - name: Show bounded runtime diagnostics
+        if: failure()
+        run: |
+          docker logs --tail 100 t3-upgrade-runtime 2>/dev/null || true
+          docker exec t3-upgrade-runtime tail -c 8192 /data/server.log /data/opencode-server.log 2>/dev/null || true
+      - name: Stop isolated runtime
+        if: always()
+        run: docker rm -f t3-upgrade-runtime 2>/dev/null || true
