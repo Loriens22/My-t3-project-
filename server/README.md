@@ -391,6 +391,23 @@ Large threads may exceed the free token allowance even with few messages.
 Sources: https://console.groq.com/docs/rate-limits and
 https://console.groq.com/docs/coding-with-groq/opencode.
 
+The live Free-plan account also enforced a 7,000 input-token/minute ceiling:
+an ordinary T3 request failed with 413 at 7,170 input tokens. A Groq-only native
+context plugin now shortens exact OpenCode 2.2.5 stock prompts and known stock
+shell/execute documentation. It preserves user/repository/T3 instructions,
+history, tools, schema validation, model identity and permissions. Unknown or
+custom agent prompts are left untouched. This allowed a real two-request T3
+file-writing task to finish in about 64 seconds, including the provider's
+minute-rate wait. It does not enlarge the account quota: longer histories and
+large tool results can still exceed the free input limit. Use the verified
+NVIDIA Nemotron model for larger coding tasks.
+
+With the owner's Groq key present and the verified NVIDIA Nemotron model in
+the native catalog, a one-time migration moves only the original blocked
+OpenCode Free title/compaction defaults to Nemotron. Explicit owner helper
+choices and all main-thread model selections remain intact. The migration
+marker is written only after both configuration files have been saved.
+
 An optional `OPENROUTER_API_KEY` enables only explicit `:free` tool models whose
 current public catalog reports zero prices in **every** price dimension.
 The list is intersected with the native OpenCode catalog; paid twins, paid
@@ -436,7 +453,8 @@ limits, not proof of an account's hosted quota.
 ModelScope's current free allowance uses daily Magicubes: 200 for daily login
 and 50 for a linked Alibaba Cloud account; Flash1017 currently costs two per
 call (up to approximately 125 calls if all 250 are earned and spent on it).
-It requires verified email and a linked real-name-verified Alibaba Cloud
+This free service is intended for noncommercial evaluation. It requires
+verified email and a linked real-name-verified Alibaba Cloud
 account. Availability to a Bulgarian account has not been confirmed; this is
 an optional preparation, not a promise of effortless sign-up or live access.
 No real ModelScope key or authenticated inference was used in qualification.

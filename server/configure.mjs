@@ -8,6 +8,8 @@ import { configureInferenceRoutes } from "./inference-routing.mjs";
 import { moonshotAccountCatalog } from "./moonshot-catalog.mjs";
 import { recurringFreeDiscoveryProviders, configureRecurringFreeProviders, openRouterFreeCatalog } from "./free-providers.mjs";
 import { modelscopeDiscoveryProviders, modelScopeCatalog, configureModelScope } from "./modelscope.mjs";
+import { configureAuxiliaryModel } from "./auxiliary-model.mjs";
+import { fileURLToPath } from "node:url";
 
 const root = process.env.T3_PHONE_ROOT || "/data";
 const selection = { instanceId: "opencode", model: "opencode/deepseek-v4.1-flash-free" };
@@ -35,7 +37,7 @@ const discoveryConfig = { enabled_providers: [
   ...recurringFreeDiscoveryProviders(), ...modelscopeDiscoveryProviders(),
 ] };
 // Latest ModelScope models need explicit native V2 definitions before discovery.
-configureModelScope(discoveryConfig, [], process.env, modelScope);
+configureModelScope(discoveryConfig, [], process.env, modelScope, { seedDiscovery: true });
 fs.writeFileSync(discoveryFile, JSON.stringify(discoveryConfig), { mode: 0o600 });
 try {
   const output = execFileSync(process.env.OPENCODE_BINARY || "/opt/t3/node_modules/.bin/opencode", ["api", "--standalone", "model.list"], {
@@ -98,6 +100,13 @@ config.providers.nvidia.models = Object.fromEntries(
 const kimiStatus = configureKimiProviders(config, catalogModels, process.env, await moonshotAccountCatalog());
 const recurringFreeStatus = configureRecurringFreeProviders(config, catalogModels, process.env, await openRouterFreeCatalog());
 const modelScopeStatus = configureModelScope(config, catalogModels, process.env, modelScope);
+// Keep the owner's other plugins. This native, provider-scoped hook shortens
+// only exact pinned built-in prose; repository/task context is preserved.
+const groqContextPlugin = fileURLToPath(new URL("./plugins/groq-context", import.meta.url));
+config.plugins = [
+  ...(config.plugins || []).filter(plugin => plugin !== groqContextPlugin),
+  ...(process.env.GROQ_API_KEY?.trim() ? [groqContextPlugin] : []),
+];
 // Every configured provider shares the same inference queue. Native Kimi
 // adapters keep their protocol, reasoning settings, credentials and identity.
 const routes = configureInferenceRoutes(config, catalogModels);
@@ -110,7 +119,7 @@ if (JSON.stringify(previous) !== JSON.stringify(freeModels)) {
   config.provider.opencode ??= {};
   config.provider.opencode.whitelist = freeModels;
 }
-fs.writeFileSync(configFile, JSON.stringify(config, null, 2) + "\n", { mode: 0o600 });
+
 console.log(`OpenCode catalog: ${freeModels.length} models with zero input/output/cache prices.`);
 console.log(`NVIDIA NIM: ${nvidia.enabled ? "enabled" : "waiting for NVIDIA_API_KEY"}; ${nvidia.provider.whitelist.length} compatible coding models configured.`);
 for (const provider of [...kimiStatus, ...recurringFreeStatus, modelScopeStatus]) {
@@ -156,5 +165,13 @@ Object.assign(settings.providerInstances.opencode.config, {
   serverUrl: "http://127.0.0.1:4096",
   serverPassword: fs.readFileSync(passwordFile, "utf8").trim(),
 });
+const auxiliaryMigration = path.join(root, "auxiliary-model-default-v1");
+const auxiliary = process.env.GROQ_API_KEY?.trim()
+  ? configureAuxiliaryModel(config, settings, catalogModels, fs.existsSync(auxiliaryMigration))
+  : { ready: false };
+fs.writeFileSync(configFile, JSON.stringify(config, null, 2) + "\n", { mode: 0o600 });
 fs.writeFileSync(settingsFile, JSON.stringify(settings, null, 2) + "\n", { mode: 0o600 });
+if (auxiliary.ready && !fs.existsSync(auxiliaryMigration)) {
+  fs.writeFileSync(auxiliaryMigration, "Metadata helper configured for the owner's provider setup\n", { mode: 0o600, flag: "wx" });
+}
 if (!fs.existsSync(fullAccessMigration)) fs.writeFileSync(fullAccessMigration, "enabled by owner request\n", { mode: 0o600, flag: "wx" });

@@ -1,0 +1,9 @@
+{
+  "name": "t3-groq-context",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./server.mjs"
+  }
+}
