@@ -103,9 +103,11 @@ const modelScopeStatus = configureModelScope(config, catalogModels, process.env,
 // Keep the owner's other plugins. This native, provider-scoped hook shortens
 // only exact pinned built-in prose; repository/task context is preserved.
 const groqContextPlugin = fileURLToPath(new URL("./plugins/groq-context", import.meta.url));
+const titleContextPlugin = fileURLToPath(new URL("./plugins/t3-title-context", import.meta.url));
 config.plugins = [
-  ...(config.plugins || []).filter(plugin => plugin !== groqContextPlugin),
+  ...(config.plugins || []).filter(plugin => plugin !== groqContextPlugin && plugin !== titleContextPlugin),
   ...(process.env.GROQ_API_KEY?.trim() ? [groqContextPlugin] : []),
+  ...(process.env.NVIDIA_API_KEY?.trim() ? [titleContextPlugin] : []),
 ];
 // Every configured provider shares the same inference queue. Native Kimi
 // adapters keep their protocol, reasoning settings, credentials and identity.
