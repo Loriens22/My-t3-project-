@@ -66,7 +66,7 @@ def native_tool_loop(base, provider, model, key_variable):
     (work / "AGENTS.md").write_text(owner_rule + "\n")
     if provider == "groq":
         observed.update(compactStockPrompt=True, ownerInstructionsPreserved=True,
-            compactShellDocumentation=True)
+            compactShellDocumentation=True, compactReadEditDocumentation=True)
 
     class Handler(http.server.BaseHTTPRequestHandler):
         def log_message(self, *arguments):
@@ -93,6 +93,11 @@ def native_tool_loop(base, provider, model, key_variable):
                 shell = next((t.get("function", {}) for t in payload.get("tools", [])
                     if t.get("function", {}).get("name") == "shell"), {})
                 observed["compactShellDocumentation"] &= shell.get("description", "").startswith("Run a shell command")
+                definitions = {t.get("function", {}).get("name"):t.get("function", {})
+                    for t in payload.get("tools", [])}
+                observed["compactReadEditDocumentation"] &= (
+                    definitions.get("read", {}).get("description", "").startswith("Read a file or directory:") and
+                    definitions.get("edit", {}).get("description", "").startswith("Replace exact file text;"))
             if any(m.get("role") == "tool" for m in messages):
                 observed["reasoningPreserved"] = any(m.get("role") == "assistant" and
                     reasoning in str(m.get(reasoning_field, "")) for m in messages)

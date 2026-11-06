@@ -137,6 +137,38 @@
     },
     "execute": {
       "text": "Run JavaScript in a confined Code Mode runtime to script tool calls and HTTP requests and compose their results.\n`fetch` is available for HTTP requests. Imports, direct filesystem access, and timers are unavailable: there is no `setTimeout` or sleep. All other external access goes through `tools`.\nWithin `{ code }`, the only callable tools are those explicitly listed in the Code Mode catalog instructions or returned by the `search` function. Inside `{ code }`, ignore tools shown outside the Code Mode catalog. They are not available in the Code Mode runtime.\nCall tools through `tools` using only exact paths and signatures from the catalog. Do not infer or normalize tool names; preserve bracket notation such as `tools.<namespace>[\"tool-name\"](input)`.\nPrefer an explicit `return`; if omitted, the final top-level expression becomes the result.\nAwait every call whose completion matters; pending calls are interrupted when execution ends. Run independent calls concurrently with `Promise.allSettled`."
+    },
+    "additionalStock": {
+      "edit": {
+        "source": "https://github.com/anomalyco/opencode/blob/v2.2.5/packages/core/src/tool/plugin/edit.ts",
+        "text": "Edit the contents of a file by finding and replacing exact text. When editing text from Read output, preserve the exact indentation (tabs or spaces) and omit the line-number prefix, such as `1: `. Never include the prefix in oldString or newString. Write line breaks as \\n; the file's existing CRLF or LF line endings are matched and preserved. To change line endings themselves, make oldString and newString differ only in \\r; that edit applies to the exact bytes. If there is no exact match, the edit retries while ignoring typographic quote, dash, and space variants, then trailing whitespace on each line. The edit fails if oldString is not found. By default, oldString must identify a UNIQUE location. Multiple matches FAIL unless replaceAll is true. Add more surrounding context to disambiguate, or set replaceAll to true to replace every occurrence. Use replaceAll when the change should apply to every occurrence, such as renaming a variable.",
+        "compact": "Replace exact file text; oldString and newString must differ. Preserve indentation from Read, excluding its line-number prefixes from both strings. Use \\n for line breaks; existing CRLF/LF is matched and preserved. To edit line endings, strings must differ only in \\r; that matches exact bytes. Missing exact matches retry ignoring typographic quote/dash/space variants, then trailing line whitespace; no match fails. oldString must match once: add context for uniqueness, or use replaceAll=true for every occurrence, such as a variable rename."
+      },
+      "read": {
+        "source": "https://github.com/anomalyco/opencode/blob/v2.2.5/packages/core/src/tool/plugin/read.ts",
+        "text": "Read the contents of a file or directory. Supports text files, images, and PDFs. Images and PDFs are presented directly to the model. Each text line is prefixed by its 1-based line number as <line>: <content>. The prefix is for reference and is not part of the file content. Directory entries are returned one per line. Use offset and limit to read large files or directories in sections. Prefer one larger read over many small slices, and use grep to find specific content in large files.",
+        "compact": "Read a file or directory: text, images and PDFs are supported. Images/PDFs go directly to the model. Text has 1-based <line>: <content> prefixes, which are not file content. Directory entries occupy one line each. Page with offset/limit; prefer larger reads and grep for specific content."
+      },
+      "question": {
+        "source": "https://github.com/anomalyco/opencode/blob/v2.2.5/packages/core/src/tool/plugin/question.ts",
+        "text": "Use this tool when you need to ask the user questions during execution. This allows you to:\n1. Gather user preferences or requirements\n2. Clarify ambiguous instructions\n3. Get decisions on implementation choices as you work\n4. Offer choices to the user about what direction to take.\n\nUsage notes:\n- A \"Type your own answer\" option is added automatically; don't include a separate option for free form answers\n- Set `multiple: true` to allow selecting more than one option\n- If you recommend a specific option, make that the first option in the list and add \"(Recommended)\" at the end of the label",
+        "compact": "Ask the user for preferences, requirements, clarification, implementation decisions or direction. Free-text answers are added automatically; do not add a free-form option. Set multiple:true for multiple selections. Put the recommended option first and suffix its label with (Recommended)."
+      },
+      "grep": {
+        "source": "https://github.com/anomalyco/opencode/blob/v2.2.5/packages/core/src/tool/plugin/grep.ts",
+        "text": "Search file contents using ripgrep's regular expression syntax or literal text matching. Use it to locate specific code, symbols, or text patterns, and narrow searches with `path` or `include`. Returns matching file paths, line numbers, and line previews.",
+        "compact": "Search file content with ripgrep regex or literal text. Narrow code/symbol/text searches by path/include. Returns file paths, line numbers and previews."
+      },
+      "write": {
+        "source": "https://github.com/anomalyco/opencode/blob/v2.2.5/packages/core/src/tool/plugin/write.ts",
+        "text": "Writes a file to the local filesystem, overwriting if one exists.\n\nMissing parent directories are created automatically.\n\nUse this tool to create new files or overwrite existing files. For partial changes, use the edit tool instead.",
+        "compact": "Create or overwrite a local file, automatically creating missing parent directories. For partial changes, use edit."
+      },
+      "webfetch": {
+        "source": "https://github.com/anomalyco/opencode/blob/v2.2.5/packages/core/src/tool/plugin/webfetch.ts",
+        "text": "Fetch content from an HTTP or HTTPS URL and return it as text, markdown, or HTML. Markdown is the default.\n\nUse a more targeted tool when one is available. This tool is read-only. Large text results may be replaced with a preview while the complete output is retained in managed storage.",
+        "compact": "Fetch HTTP/HTTPS content as text, markdown (default), or HTML. Prefer a more targeted tool. Read-only. Large text may return a preview; complete output is retained in managed storage."
+      }
     }
   }
 }
