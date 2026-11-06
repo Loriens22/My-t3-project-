@@ -1,5 +1,6 @@
 """Actual Native T3 title-session factory, local HTTP fixture and dummy key."""
 import http.server
+import base64
 import json
 import os
 from pathlib import Path
@@ -52,7 +53,8 @@ with tempfile.TemporaryDirectory(prefix='native-title-context-') as tmp:
     environment={k:v for k,v in os.environ.items() if k in ['PATH','HOME','LANG','SSL_CERT_FILE','NODE_EXTRA_CA_CERTS',
         'HTTP_PROXY','HTTPS_PROXY','NO_PROXY','http_proxy','https_proxy','no_proxy']}
     environment.update(XDG_DATA_HOME=str(root/'data'),XDG_CONFIG_HOME=str(root/'config'),
-        XDG_CACHE_HOME=str(root/'cache'),OPENCODE_CONFIG=str(root/'opencode.json'),NVIDIA_API_KEY='ci-dummy-nvidia')
+        XDG_CACHE_HOME=str(root/'cache'),OPENCODE_CONFIG=str(root/'opencode.json'),NVIDIA_API_KEY='ci-dummy-nvidia',
+        OPENCODE_SERVER_USERNAME='opencode',OPENCODE_SERVER_PASSWORD='ci-dummy-native-password')
     config={'enabled_providers':['nvidia'],'model':'nvidia/'+MODEL,'permission':'allow',
         'plugins':['/app/server/plugins/t3-title-context'],'providers':{'nvidia':{'models':{MODEL:{'disabled':False,
             'settings':{'baseURL':f'http://127.0.0.1:{fixture.server_port}/v1'}}}}}}
@@ -63,7 +65,8 @@ with tempfile.TemporaryDirectory(prefix='native-title-context-') as tmp:
     session_id=None
     def api(path,data=None,method=None):
         req=urllib.request.Request(f'http://127.0.0.1:{port}'+path,
-            data=None if data is None else json.dumps(data).encode(),headers={'Content-Type':'application/json'},method=method)
+            data=None if data is None else json.dumps(data).encode(),headers={'Content-Type':'application/json',
+                'Authorization':'Basic '+base64.b64encode(b'opencode:ci-dummy-native-password').decode()},method=method)
         with urllib.request.urlopen(req,timeout=5) as r:return json.load(r) if r.status!=204 else None
     try:
         deadline=time.monotonic()+45
