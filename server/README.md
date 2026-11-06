@@ -412,10 +412,10 @@ T3 0.1.0's OpenCode 2 text-generation runner ignores the selected agent option
 and creates a default build session for titles, rejecting every tool request.
 The NVIDIA metadata helper can consequently attempt unnecessary coding/tool
 steps. A separate native hook recognizes only the exact temporary title-session
-name, single ask-all permission rule, pinned built-in prompt, helper model and
-T3 title-request prefix. It gives that metadata request a tool-free JSON task
+name, single ask-all permission rule, helper model and public T3 title-request
+header across text and multipart user messages. It appends a tool-free JSON task
 with a 2,048-token output cap. User/repository instructions and the original title
-request are preserved. Coding sessions, custom agent prompts and other models
+request are preserved verbatim. Coding sessions, custom agent prompts and other models
 are untouched. Qualification exercises the actual Native title-session factory
 and HTTP payload with dummy credentials and retained repository instructions.
 

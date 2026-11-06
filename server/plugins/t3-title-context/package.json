@@ -1,1 +1,1 @@
-{"name":"t3-title-context","version":"1.0.1","type":"module","private":true,"exports":{".":"./server.mjs"}}
+{"name":"t3-title-context","version":"1.0.2","type":"module","private":true,"exports":{".":"./server.mjs"}}

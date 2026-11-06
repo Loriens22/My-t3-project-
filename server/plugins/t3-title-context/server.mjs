@@ -31,10 +31,12 @@ export function hasTitleRequest(event) {
 export function applyTitleContext(event, session, agent) {
   if (event.model?.providerID !== 'nvidia' || event.model.id !== helperID || !isT3TitleSession(session)) return false;
   if (!agent || agent.system) return false;
-  const first = event.system?.[0];
-  if (!first || first.metadata?.experimental?.instructions !== undefined || !nativeStock.has(first.text)) return false;
   if (!hasTitleRequest(event)) return false;
-  event.system[0] = { ...first, text: titleInstructions };
+  // Keep all harness/repository system parts verbatim. The temporary title
+  // factory can receive extra T3 context that a standalone session lacks.
+  if (!event.system.some(part => part.text === titleInstructions)) {
+    event.system.push({ type: 'text', text: titleInstructions });
+  }
   // These tools could not run: T3 rejects every permission request. Omitting
   // them prevents hallucinated tool/permission retry loops in metadata only.
   event.tools = {};
@@ -43,7 +45,7 @@ export function applyTitleContext(event, session, agent) {
 }
 
 export default { id: 't3.title-context', async setup(context) {
-  const registration = await context.session.hook('context', async event => {
+  const handler = async event => {
     if (event.model?.id !== helperID) return;
     try {
       const found = await context.session.get({ sessionID: event.sessionID });
@@ -52,14 +54,18 @@ export default { id: 't3.title-context', async setup(context) {
       if (!isT3TitleSession(session)) return;
       const foundAgent = await context.agent.get({ agentID: event.agent });
       const agent = foundAgent?.data ?? foundAgent;
+      const stockPrompt = nativeStock.has(event.system?.[0]?.text);
       const applied = applyTitleContext(event, session, agent?.id ? agent : undefined);
       // Only booleans/counts: never record prompt text, histories or credentials.
-      console.info(JSON.stringify({ event: 't3.title-context', version: '1.0.1', applied,
-        agent: event.agent, customSystem: !!agent?.system, stockPrompt: nativeStock.has(event.system?.[0]?.text),
+      console.info(JSON.stringify({ event: 't3.title-context', version: '1.0.2', applied,
+        agent: event.agent, customSystem: !!agent?.system, stockPrompt,
         requestMatched: hasTitleRequest(event), userTextParts: titleRequestText(event).length }));
     } catch (error) {
-      console.warn(JSON.stringify({ event: 't3.title-context.lookup-failed', version: '1.0.1', errorType: error?.name || 'Error' }));
+      console.warn(JSON.stringify({ event: 't3.title-context.lookup-failed', version: '1.0.2', errorType: error?.name || 'Error' }));
     }
-  }, { providerID: 'nvidia' });
-  return () => registration.dispose();
+  };
+  const registrations = [];
+  for (const name of ['context', 'generate']) registrations.push(
+    await context.session.hook(name, handler, { providerID: 'nvidia' }));
+  return async () => { for (const registration of registrations) await registration.dispose(); };
 } };
