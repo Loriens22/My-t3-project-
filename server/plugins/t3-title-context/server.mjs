@@ -39,9 +39,10 @@ export default { id: 't3.title-context', async setup(context) {
     if (event.model?.id !== helperID) return;
     try {
       const session = await context.session.get({ sessionID: event.sessionID });
-      if (!isT3TitleSession(session?.data)) return;
+      // The Promise Session API returns Info directly (unlike agent.get).
+      if (!isT3TitleSession(session)) return;
       const agent = await context.agent.get({ agentID: event.agent });
-      applyTitleContext(event, session.data, agent?.data);
+      applyTitleContext(event, session, agent?.data);
     } catch { /* Failed identification preserves the original request. */ }
   }, { providerID: 'nvidia' });
   return () => registration.dispose();
