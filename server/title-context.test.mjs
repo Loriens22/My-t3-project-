@@ -26,6 +26,14 @@ test('regeneration is supported and a smaller preexisting output cap is preserve
  const e=event();e.options.maxTokens=512;e.messages[0].content[0].text='Regenerate the title for an existing T3 Code thread so the user can recognize it weeks later.\nThe previous title was "Old".\nReturn JSON with keys title and needsRefinement.';
  assert.equal(applyTitleContext(e,session(),{}),true);assert.equal(e.options.maxTokens,512);
 });
+test('title text survives synthetic user context, text-only content and harness wrappers',()=>{
+ for(const form of ['synthetic-first','string','wrapped']){const e=event();const original=e.messages[0].content[0].text;
+  if(form==='synthetic-first')e.messages.unshift({role:'user',content:[{type:'text',text:'Harness context before the title request'}]});
+  if(form==='string')e.messages[0].content=original;
+  if(form==='wrapped')e.messages[0].content[0].text='<system-reminder>Harness context</system-reminder>\n'+original;
+  const messages=structuredClone(e.messages);assert.equal(applyTitleContext(e,session(),{id:'build'}),true);assert.deepEqual(e.messages,messages);assert.deepEqual(e.tools,{});
+ }
+});
 test('runtime registration scopes the hook and fails closed on missing identification',async()=>{
  for(const broken of [false,true]){let callback;let disposed=0;const cleanup=await plugin.setup({session:{async get(){if(broken)throw Error('lookup failed');return session();},async hook(name,fn,filter){assert.equal(name,'context');assert.deepEqual(filter,{providerID:'nvidia'});callback=fn;return {dispose(){disposed++;}};}},agent:{async get(){return {data:{id:'build'}};}}});const e=event();const before=JSON.stringify(e);await callback(e);if(broken)assert.equal(JSON.stringify(e),before);else assert.deepEqual(e.tools,{});await cleanup();assert.equal(disposed,1);}
 });
