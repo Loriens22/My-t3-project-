@@ -394,7 +394,7 @@ https://console.groq.com/docs/coding-with-groq/opencode.
 The live Free-plan account also enforced a 7,000 input-token/minute ceiling:
 an ordinary T3 request failed with 413 at 7,170 input tokens. A Groq-only native
 context plugin now shortens exact OpenCode 2.2.5 stock prompts and known stock
-shell/execute documentation. It preserves user/repository/T3 instructions,
+tool documentation. It preserves user/repository/T3 instructions,
 history, tools, schema validation, model identity and permissions. Unknown or
 custom agent prompts are left untouched. This allowed a real two-request T3
 file-writing task to finish in about 64 seconds, including the provider's

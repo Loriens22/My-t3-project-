@@ -284,3 +284,64 @@ test('custom same-name tools, unknown native variants and custom property annota
     assert.equal(JSON.stringify(other), bytes);
   }
 });
+
+test('additional pinned stock documentation retains every tool and validation field', () => {
+  const entries = toolDescriptions.additionalStock;
+  const original = freezeTree(Object.fromEntries(Object.entries(entries).map(([name, entry]) => [name, {
+    description: entry.text, input: { type: 'object', properties: {
+      ownerField: { type: 'string', minLength: 2, description: 'Owner field documentation' },
+    }, required: ['ownerField'], additionalProperties: false }, permissionMarker: { retained: true },
+  }])));
+  const before = JSON.stringify(original);
+  const event = fixture(prompts.at(-1).text);
+  event.tools = original;
+  assert.equal(compactGroqContext(event), true);
+  assert.deepEqual(Object.keys(event.tools), Object.keys(original));
+  let saved = 0;
+  for (const [name, entry] of Object.entries(entries)) {
+    assert.notEqual(event.tools[name], original[name]);
+    assert.equal(event.tools[name].input, original[name].input);
+    assert.equal(event.tools[name].permissionMarker, original[name].permissionMarker);
+    const { description, ...validation } = event.tools[name];
+    const { description: old, ...unchanged } = original[name];
+    assert.deepEqual(validation, unchanged);
+    assert.ok(description.length < old.length);
+    assert.match(entry.source, /\/v2\.2\.5\/packages\/core\/src\/tool\/plugin\//);
+    saved += old.length - description.length;
+  }
+  assert.ok(saved > 1000);
+  assert.equal(JSON.stringify(original), before);
+  const expected = {
+    edit: ['oldString and newString must differ', 'Preserve indentation', 'line-number prefixes', '\\n',
+      'CRLF/LF', '\\r', 'exact bytes', 'typographic quote/dash/space', 'trailing line whitespace',
+      'no match fails', 'match once', 'context for uniqueness', 'replaceAll=true', 'every occurrence'],
+    read: ['images and PDFs', 'directly to the model', '1-based', '<line>: <content>', 'not file content',
+      'Directory entries', 'offset/limit', 'larger reads', 'grep'],
+    question: ['preferences', 'requirements', 'clarification', 'implementation decisions', 'direction',
+      'automatically', 'do not add a free-form option', 'multiple:true', 'recommended option first', '(Recommended)'],
+    grep: ['ripgrep regex', 'literal text', 'path/include', 'file paths', 'line numbers', 'previews'],
+    write: ['Create or overwrite', 'missing parent directories', 'partial changes, use edit'],
+    webfetch: ['HTTP/HTTPS', 'text, markdown (default), or HTML', 'more targeted tool', 'Read-only',
+      'preview', 'complete output is retained in managed storage'],
+  };
+  for (const [name, facts] of Object.entries(expected)) for (const fact of facts) {
+    assert.ok(event.tools[name].description.includes(fact), name + ': ' + fact);
+  }
+});
+
+test('additional documentation leaves custom tools, other providers and custom agents unchanged', async () => {
+  const tools = Object.fromEntries(Object.entries(toolDescriptions.additionalStock).map(([name, entry]) =>
+    [name, { description: entry.text + '\nOWNER RULE', input: { type: 'object' } }]));
+  tools.ownerTool = { description: toolDescriptions.additionalStock.edit.text, input: { type: 'object' } };
+  const event = fixture(prompts.at(-1).text);event.tools = freezeTree(tools);
+  assert.equal(compactGroqContext(event), true);
+  assert.equal(event.tools, tools);
+  for (const [provider, text] of [['nvidia', prompts.at(-1).text], ['groq', 'Owner system instructions']]) {
+    const other = fixture(text, models[0], provider);
+    other.tools = freezeTree(Object.fromEntries(Object.entries(toolDescriptions.additionalStock).map(([name, entry]) =>
+      [name, { description: entry.text, input: { type: 'object' } }])));
+    const before = JSON.stringify(other);
+    assert.equal(compactGroqContext(other), false);
+    assert.equal(JSON.stringify(other), before);
+  }
+});

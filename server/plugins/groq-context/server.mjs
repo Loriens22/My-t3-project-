@@ -66,6 +66,12 @@ function compactToolDocumentation(event) {
     changed ??= { ...tools };
     changed.execute = { ...execute, description: executeDescription };
   }
+  for (const [name, { text, compact }] of Object.entries(stock.toolDescriptions.additionalStock)) {
+    const tool = tools[name];
+    if (tool?.description !== text) continue;
+    changed ??= { ...tools };
+    changed[name] = { ...tool, description: compact };
+  }
   if (changed) event.tools = changed;
 }
 
