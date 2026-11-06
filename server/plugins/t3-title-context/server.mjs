@@ -16,17 +16,27 @@ export function isT3TitleSession(session) {
     Object.keys(rules[0]).length === 3;
 }
 
+export function titleRequestText(event) {
+  return (event.messages || []).filter(m => m.role === 'user').flatMap(m =>
+    typeof m.content === 'string' ? [m.content] : Array.isArray(m.content)
+      ? m.content.filter(p => p.type === 'text').map(p => p.text) : []);
+}
+
+export function hasTitleRequest(event) {
+  return titleRequestText(event).some(text =>
+    text.includes('Generate a title that will help the user recognize this T3 Code thread weeks later.\nReturn JSON with keys title and needsRefinement.') ||
+    (text.includes('Regenerate the title for an existing T3 Code thread so the user can recognize it weeks later.\nThe previous title was ') && text.includes('Return JSON with keys title and needsRefinement.')));
+}
+
 export function applyTitleContext(event, session, agent) {
   if (event.model?.providerID !== 'nvidia' || event.model.id !== helperID || !isT3TitleSession(session)) return false;
   if (!agent || agent.system) return false;
-  const first = event.system?.[0];
-  if (!first || first.metadata?.experimental?.instructions !== undefined || !nativeStock.has(first.text)) return false;
-  const user = event.messages?.find(m => m.role === 'user');
-  const text = user?.content?.filter(p => p.type === 'text').map(p => p.text).join('\n') || '';
-  const initial = text.startsWith('Generate a title that will help the user recognize this T3 Code thread weeks later.\nReturn JSON with keys title and needsRefinement.');
-  const regenerate = text.startsWith('Regenerate the title for an existing T3 Code thread so the user can recognize it weeks later.\nThe previous title was ') && text.includes('Return JSON with keys title and needsRefinement.');
-  if (!initial && !regenerate) return false;
-  event.system[0] = { ...first, text: titleInstructions };
+  if (!hasTitleRequest(event)) return false;
+  // Keep all harness/repository system parts verbatim. The temporary title
+  // factory can receive extra T3 context that a standalone session lacks.
+  if (!event.system.some(part => part.text === titleInstructions)) {
+    event.system.push({ type: 'text', text: titleInstructions });
+  }
   // These tools could not run: T3 rejects every permission request. Omitting
   // them prevents hallucinated tool/permission retry loops in metadata only.
   event.tools = {};
@@ -35,15 +45,27 @@ export function applyTitleContext(event, session, agent) {
 }
 
 export default { id: 't3.title-context', async setup(context) {
-  const registration = await context.session.hook('context', async event => {
+  const handler = async event => {
     if (event.model?.id !== helperID) return;
     try {
-      const session = await context.session.get({ sessionID: event.sessionID });
+      const found = await context.session.get({ sessionID: event.sessionID });
+      const session = isT3TitleSession(found) ? found : found?.data;
       // The Promise Session API returns Info directly (unlike agent.get).
       if (!isT3TitleSession(session)) return;
-      const agent = await context.agent.get({ agentID: event.agent });
-      applyTitleContext(event, session, agent?.data);
-    } catch { /* Failed identification preserves the original request. */ }
-  }, { providerID: 'nvidia' });
-  return () => registration.dispose();
+      const foundAgent = await context.agent.get({ agentID: event.agent });
+      const agent = foundAgent?.data ?? foundAgent;
+      const stockPrompt = nativeStock.has(event.system?.[0]?.text);
+      const applied = applyTitleContext(event, session, agent?.id ? agent : undefined);
+      // Only booleans/counts: never record prompt text, histories or credentials.
+      console.info(JSON.stringify({ event: 't3.title-context', version: '1.0.2', applied,
+        agent: event.agent, customSystem: !!agent?.system, stockPrompt,
+        requestMatched: hasTitleRequest(event), userTextParts: titleRequestText(event).length }));
+    } catch (error) {
+      console.warn(JSON.stringify({ event: 't3.title-context.lookup-failed', version: '1.0.2', errorType: error?.name || 'Error' }));
+    }
+  };
+  const registrations = [];
+  for (const name of ['context', 'generate']) registrations.push(
+    await context.session.hook(name, handler, { providerID: 'nvidia' }));
+  return async () => { for (const registration of registrations) await registration.dispose(); };
 } };
