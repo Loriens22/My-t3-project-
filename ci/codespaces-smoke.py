@@ -3,6 +3,7 @@ import json
 import os
 from pathlib import Path
 import signal
+import stat
 import subprocess
 import time
 import urllib.request
@@ -83,4 +84,21 @@ log_check.stdin.close()
 assert log_check.wait(timeout=10) == 0
 assert (STATE / "launcher.log").stat().st_size <= 2097152
 assert (STATE / "launcher.log.1").stat().st_size <= 2097152
-print("Codespaces launcher: single instance, crash recovery, stop/start persistence and bounded logs passed", flush=True)
+
+# Only the GitHub control-plane call is replaced: readiness and the pairing
+# grant use the actual running T3 runtime. Never print the one-time credential.
+fake_bin = STATE / "fixture-bin"
+fake_bin.mkdir()
+fake_gh = fake_bin / "gh"
+fake_gh.write_text('#!/bin/sh\n[ "$*" = "codespace ports visibility 3773:public --codespace fixture" ]\n')
+fake_gh.chmod(0o700)
+phone_environment = dict(environment, CODESPACE_NAME="fixture", PATH=str(fake_bin)+os.pathsep+environment["PATH"])
+connection = subprocess.run(["bash", str(SCRIPTS / "codespaces-ready.sh")], env=phone_environment,
+    check=True, capture_output=True, text=True, timeout=200)
+card = STATE / "phone-connection.txt"
+assert "HOST: https://fixture-3773.app.github.dev" in card.read_text()
+assert "PAIRING CODE: " in card.read_text() and "Expires: " in card.read_text()
+assert stat.S_IMODE(card.stat().st_mode) == 0o600
+assert card.read_text() == connection.stdout
+assert not list(STATE.glob("phone-connection.??????")), "Partial credential cards were left behind"
+print("Codespaces launcher: singleton, recovery, persistence, log bounds and private protocol-2 phone card passed", flush=True)

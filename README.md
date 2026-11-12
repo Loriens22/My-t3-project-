@@ -10,8 +10,16 @@ Android приложението се свързва с HTTPS адрес и ед
 `/workspaces/.t3-code/data`, извън Git. Нормално спиране и rebuild на същия
 Codespace запазват тази папка. Изтриването на Codespace я изтрива.
 
+За създаване отвори [готовата настройка](https://github.com/codespaces/new?hide_repo_select=true&repo=1421395005&ref=codex%2Famd-provider-recovery)
+и избери **2-core → Create codespace**. Ако GitHub изисква платежен метод или
+платено потребление, спри — настройката е предназначена за наличната безплатна квота.
+
 При създаване се изпълнява `scripts/codespaces-setup.sh`; при всяко пускане —
-`scripts/codespaces-start.sh`. T3 и един общ OpenCode процес стартират автоматично.
+`scripts/codespaces-ready.sh`. T3 и един общ OpenCode процес стартират автоматично.
+Изчаква се действителна готовност по протокол 2, отваря се само порт 3773 и се
+издава еднократен код. В редактора автоматично се отваря личният файл
+`/workspaces/.t3-code/phone-connection.txt` с **HOST** и **PAIRING CODE**.
+Той не се публикува в Git или на публичен HTTP адрес.
 При срив на процес се прави повторен опит с нарастваща пауза. Тази защита работи
 само докато самият Codespace е включен.
 
