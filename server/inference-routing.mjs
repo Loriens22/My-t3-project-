@@ -5,6 +5,7 @@ const endpoints = Object.freeze({
   nvidia: "https://integrate.api.nvidia.com/v1",
   groq: "https://api.groq.com/openai/v1",
   modelscope: "https://api-inference.modelscope.cn/v1",
+  "amd-radeon": "https://developer.amd.com.cn/radeon/api/v1",
   openrouter: "https://openrouter.ai/api/v1",
   moonshotai: "https://api.moonshot.ai/v1",
   "kimi-code-plan-global": "https://api.kimi.ai/coding/v1",
@@ -22,7 +23,7 @@ export function configureInferenceRoutes(config, nativeCatalog) {
     catch { throw new Error("Unrecognized inference endpoint in the model catalog"); }
     const expected = new URL(fallback);
     if (base.protocol !== "https:" || base.host !== expected.host || base.username || base.password || base.search || base.hash ||
-        (["moonshotai", "kimi-code-plan-global", "groq", "openrouter", "modelscope"].includes(model.providerID) &&
+        (["moonshotai", "kimi-code-plan-global", "groq", "openrouter", "modelscope", "amd-radeon"].includes(model.providerID) &&
           base.pathname.replace(/\/$/, "") !== expected.pathname)) {
       // Never include an unexpected URL in diagnostics; it might contain a key.
       throw new Error("Unrecognized inference endpoint in the model catalog");

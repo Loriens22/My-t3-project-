@@ -51,8 +51,8 @@ def native_tool_loop(base, provider, model, key_variable):
     marker = "NATIVE_UPGRADE_TOOL_VERIFIED"
     fake_key = "ci-dummy-" + provider
     reasoning = "I will verify the fixture using the shell tool."
-    requires_reasoning = provider in ("moonshotai", "kimi-code-plan-global", "modelscope")
-    reasoning_field = "reasoning_content" if requires_reasoning else "reasoning"
+    requires_reasoning = provider in ("moonshotai", "kimi-code-plan-global", "modelscope", "amd-radeon")
+    reasoning_field = "reasoning_content" if provider in ("moonshotai", "kimi-code-plan-global", "modelscope") else "reasoning"
     code = ("import json,pathlib; p=pathlib.Path('upgrade-proof.json'); "
         "p.write_text(json.dumps({'verified':True,'answer':42})); "
         "assert json.loads(p.read_text())=={'verified':True,'answer':42}; "
@@ -67,6 +67,9 @@ def native_tool_loop(base, provider, model, key_variable):
     if provider == "groq":
         observed.update(compactStockPrompt=True, ownerInstructionsPreserved=True,
             compactShellDocumentation=True, compactReadEditDocumentation=True)
+    if provider == "amd-radeon":
+        observed.update(singleFirstSystem=True, noDeveloperRole=True,
+            ownerInstructionsPreserved=True, amdOptionsValid=True)
 
     class Handler(http.server.BaseHTTPRequestHandler):
         def log_message(self, *arguments):
@@ -86,6 +89,15 @@ def native_tool_loop(base, provider, model, key_variable):
                 observed["groqOptionsValid"] &= groq_format_valid and "thinking" not in payload
             observed["modelIdentity"] &= payload.get("model") == model
             messages = payload.get("messages", [])
+            if provider == "amd-radeon":
+                observed["singleFirstSystem"] &= bool(messages) and messages[0].get("role") == "system" and sum(
+                    m.get("role") == "system" for m in messages) == 1
+                observed["noDeveloperRole"] &= all(m.get("role") != "developer" for m in messages)
+                observed["ownerInstructionsPreserved"] &= owner_rule in str(messages[0].get("content", ""))
+                effort = "none" if model == "DeepSeek-V4.1-Flash" else "low"
+                observed["amdOptionsValid"] &= (0 < payload.get("max_tokens", 0) <= 16384 and
+                    "max_completion_tokens" not in payload and "thinking" not in payload and
+                    (model == "MiMo-V2.6-Flash" or payload.get("reasoning_effort") == effort))
             if provider == "groq":
                 system = "\n".join(str(m.get("content", "")) for m in messages if m.get("role") == "system")
                 observed["compactStockPrompt"] &= "You are OpenCode's coding agent: finish the user's task." in system
@@ -158,6 +170,16 @@ def native_tool_loop(base, provider, model, key_variable):
         config.update(model=provider + "/" + model, small_model=provider + "/" + model, permission="allow")
         config["providers"][provider]["settings"]["baseURL"] = entry["settings"]["baseURL"]
         config["providers"][provider]["models"][model]["settings"]["baseURL"] = entry["settings"]["baseURL"]
+    if provider == "amd-radeon":
+        seed = subprocess.check_output(["node", "--input-type=module", "-e",
+            "import {configureAmdRadeon} from '/app/server/amd-radeon.mjs'; const c={}; "
+            "configureAmdRadeon(c,[],{AMD_RADEON_API_KEY:'ci-dummy-amd-radeon'},"
+            "{reason:'ready',modelIds:[process.argv[1]]},{seedDiscovery:true});"
+            "process.stdout.write(JSON.stringify(c));", model], text=True)
+        config = json.loads(seed)
+        config.update(model=provider + "/" + model, small_model=provider + "/" + model, permission="allow")
+        config["providers"][provider]["settings"]["baseURL"] = entry["settings"]["baseURL"]
+        config["providers"][provider]["models"][model]["settings"]["baseURL"] = entry["settings"]["baseURL"]
     (root / "opencode.json").write_text(json.dumps(config))
     environment = isolated_environment(root)
     environment[key_variable] = fake_key
@@ -208,3 +230,5 @@ with tempfile.TemporaryDirectory(prefix="opencode-upgrade-") as temporary:
     native_tool_loop(base, "openrouter", "nvidia/nemotron-3.5-lightning:free", "OPENROUTER_API_KEY")
 
     native_tool_loop(base, "modelscope", "deepseek-ai/DeepSeek-V4.1-Flash-1017", "MODELSCOPE_API_KEY")
+    for model in ("DeepSeek-V4.1-Flash", "Qwen3.8-Flash-Next", "Qwen3.8-27B", "GLM-5.3-Flash", "MiMo-V2.6-Flash"):
+        native_tool_loop(base, "amd-radeon", model, "AMD_RADEON_API_KEY")

@@ -8,6 +8,7 @@ import { configureInferenceRoutes } from "./inference-routing.mjs";
 import { moonshotAccountCatalog } from "./moonshot-catalog.mjs";
 import { recurringFreeDiscoveryProviders, configureRecurringFreeProviders, openRouterFreeCatalog } from "./free-providers.mjs";
 import { modelscopeDiscoveryProviders, modelScopeCatalog, configureModelScope } from "./modelscope.mjs";
+import { amdRadeonDiscoveryProviders, amdRadeonCatalog, configureAmdRadeon } from "./amd-radeon.mjs";
 import { configureAuxiliaryModel } from "./auxiliary-model.mjs";
 import { fileURLToPath } from "node:url";
 
@@ -31,13 +32,14 @@ let catalogModels = [];
 const catalogFile = path.join(root, "model-catalog-public.json");
 try { catalogModels = JSON.parse(fs.readFileSync(catalogFile, "utf8")); } catch {}
 const discoveryFile = path.join(root, "catalog-discovery.json");
-const modelScope = await modelScopeCatalog();
+const [modelScope, amdRadeon] = await Promise.all([modelScopeCatalog(), amdRadeonCatalog()]);
 const discoveryConfig = { enabled_providers: [
   "opencode", ...(process.env.NVIDIA_API_KEY?.trim() ? ["nvidia"] : []), ...kimiDiscoveryProviders(),
-  ...recurringFreeDiscoveryProviders(), ...modelscopeDiscoveryProviders(),
+  ...recurringFreeDiscoveryProviders(), ...modelscopeDiscoveryProviders(), ...amdRadeonDiscoveryProviders(),
 ] };
 // Latest ModelScope models need explicit native V2 definitions before discovery.
 configureModelScope(discoveryConfig, [], process.env, modelScope, { seedDiscovery: true });
+configureAmdRadeon(discoveryConfig, [], process.env, amdRadeon, { seedDiscovery: true });
 fs.writeFileSync(discoveryFile, JSON.stringify(discoveryConfig), { mode: 0o600 });
 try {
   const output = execFileSync(process.env.OPENCODE_BINARY || "/opt/t3/node_modules/.bin/opencode", ["api", "--standalone", "model.list"], {
@@ -100,6 +102,7 @@ config.providers.nvidia.models = Object.fromEntries(
 const kimiStatus = configureKimiProviders(config, catalogModels, process.env, await moonshotAccountCatalog());
 const recurringFreeStatus = configureRecurringFreeProviders(config, catalogModels, process.env, await openRouterFreeCatalog());
 const modelScopeStatus = configureModelScope(config, catalogModels, process.env, modelScope);
+const amdRadeonStatus = configureAmdRadeon(config, catalogModels, process.env, amdRadeon);
 // Keep the owner's other plugins. This native, provider-scoped hook shortens
 // only exact pinned built-in prose; repository/task context is preserved.
 const groqContextPlugin = fileURLToPath(new URL("./plugins/groq-context", import.meta.url));
@@ -124,7 +127,7 @@ if (JSON.stringify(previous) !== JSON.stringify(freeModels)) {
 
 console.log(`OpenCode catalog: ${freeModels.length} models with zero input/output/cache prices.`);
 console.log(`NVIDIA NIM: ${nvidia.enabled ? "enabled" : "waiting for NVIDIA_API_KEY"}; ${nvidia.provider.whitelist.length} compatible coding models configured.`);
-for (const provider of [...kimiStatus, ...recurringFreeStatus, modelScopeStatus]) {
+for (const provider of [...kimiStatus, ...recurringFreeStatus, modelScopeStatus, amdRadeonStatus]) {
   console.log(`${provider.name}: ${provider.enabled ? "enabled" : provider.reason === "missing_key" ? `waiting for ${provider.keyVariable}` : provider.reason.replaceAll("_", " ")}; ${provider.modelCount} compatible coding models configured.`);
 }
 writeNew("t3/userdata/settings.json", {

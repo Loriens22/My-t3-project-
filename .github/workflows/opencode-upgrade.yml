@@ -4,11 +4,14 @@ on:
     branches:
       - codex/opencode-2.2.5
       - codex/recurring-free-providers
+      - codex/amd-provider-recovery
     paths:
       - Dockerfile
       - "server/**"
       - "!server/README.md"
       - "ci/**"
+      - ".devcontainer/**"
+      - "scripts/**"
       - ".github/workflows/opencode-upgrade.yml"
   workflow_dispatch:
 permissions:
@@ -22,6 +25,15 @@ jobs:
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
+      - name: Check Codespaces lifecycle syntax
+        run: |
+          for script in scripts/*.sh .devcontainer/*.sh; do bash -n "$script"; done
+          python3 - <<'PY'
+          import json
+          with open('.devcontainer/devcontainer.json') as source:
+              json.load(source)
+          print('Codespaces shell and devcontainer syntax passed')
+          PY
       - name: Build pinned runtime
         run: docker build -t t3-upgrade-check .
       - name: Run configuration, resource and archive checks
