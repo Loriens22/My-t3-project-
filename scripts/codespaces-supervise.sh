@@ -3,6 +3,7 @@ set -euo pipefail
 umask 077
 [[ "${CODESPACES:-}" == true ]] || exit 1
 state=/workspaces/.t3-code
+scripts=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 exec 9>"$state/runtime.lock"
 # A kernel lock avoids stale PID files and duplicate servers on repeated starts.
 flock -n 9 || exit 0
@@ -17,12 +18,10 @@ stop_runtime() {
 trap stop_runtime TERM INT
 delay=2
 while [[ "$stopping" == false ]]; do
-  # Startup output includes a private pairing grant; keep just two bounded logs.
-  if [[ -f "$state/launcher.log" ]] && (( $(stat -c %s "$state/launcher.log") > 2097152 )); then
-    mv -f -- "$state/launcher.log" "$state/launcher.log.1"
-  fi
   began=$SECONDS
-  setsid bash /app/server/start.sh >>"$state/launcher.log" 2>&1 9>&- &
+  # Rotate during normal operation too: monitor output continues after startup.
+  # The logger must not inherit the singleton lock.
+  setsid bash /app/server/start.sh > >(node --max-old-space-size=32 "$scripts/codespaces-log.mjs" 9>&-) 2>&1 9>&- &
   runtime_pid=$!
   status=0
   wait "$runtime_pid" || status=$?

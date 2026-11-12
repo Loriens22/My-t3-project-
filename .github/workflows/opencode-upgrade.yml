@@ -48,6 +48,9 @@ jobs:
       - name: Verify temporary T3 title sessions cannot loop on unavailable tools
         run: |
           docker run --rm --memory=1000000000 --memory-swap=1000000000 --cpus=1 -v "$PWD/ci:/checks:ro" --entrypoint python3 t3-upgrade-check /checks/title-context-smoke.py
+      - name: Verify Codespaces starts once and recovers after a runtime crash
+        run: |
+          docker run --rm --memory=1000000000 --memory-swap=1000000000 --cpus=1 -v "$PWD:/source:ro" -v "$PWD/ci:/checks:ro" --entrypoint python3 t3-upgrade-check /checks/codespaces-smoke.py
       - name: Start fresh T3 with the shared OpenCode server
         run: |
           docker run -d --name t3-upgrade-runtime --memory=1000000000 --memory-swap=1000000000 --cpus=1 -p 127.0.0.1:3773:3773 t3-upgrade-check
